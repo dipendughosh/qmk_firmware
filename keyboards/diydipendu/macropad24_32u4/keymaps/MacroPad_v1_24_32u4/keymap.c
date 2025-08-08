@@ -1,5 +1,6 @@
 #include QMK_KEYBOARD_H
 #include <stdio.h> // Include this for sprintf to work correctly
+#include "oled_driver.h"
 
 enum layers {
   _FUNCTION,
@@ -193,6 +194,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 // This function renders the layer and WPM info
 void render_main_info(void) {
     oled_set_cursor(0, 0);
+    // oled_clear();
 
     // Display current layer
     oled_write_P(PSTR("Layer: "), false);
@@ -210,9 +212,10 @@ void render_main_info(void) {
             oled_write_P(PSTR("MACROS"), false);
             break;
         default:
-            oled_write_P(PSTR("Undefined"), false);
+            oled_write_P(PSTR("Undefined!!!!"), false);
             break;
     }
+    oled_write_P(PSTR("               "), false);
 
     // Display WPM
     oled_set_cursor(0, 2);
@@ -224,12 +227,13 @@ void render_main_info(void) {
 // This function renders the last pressed key info
 void render_key_info(void) {
     oled_set_cursor(0, 0);
+
     oled_write_P(PSTR("Pressed: "), false);
     oled_write(last_key_pressed, false);
+    oled_write_P(PSTR("               "), false);
 }
 
 bool oled_task_user(void) {
-    // oled_clear();
     // The conditional logic to choose what to display
     if (timer_elapsed(oled_timer) > 1500) { // 1.5 second timeout
         // If idle, show layer and WPM
@@ -238,8 +242,6 @@ bool oled_task_user(void) {
         // If typing, show the last key pressed
         render_key_info();
     }
-
-    oled_write_P(PSTR("                  "), false);
 
     return true;
 }
