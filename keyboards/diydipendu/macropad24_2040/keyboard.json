@@ -11,7 +11,8 @@
         "bootmagic": false,
         "extrakey": true,
         "mousekey": true,
-        "nkro": true
+        "nkro": true,
+        "oled": true
     },
     "qmk": {
         "locking": {
