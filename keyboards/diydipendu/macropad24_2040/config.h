@@ -1,5 +1,8 @@
 #pragma once
 
+// #define BOOTMAGIC_ROW 0
+// #define BOOTMAGIC_COLUMN 0
+
 #define I2C1_SDA_PIN GP0
 #define I2C1_SCL_PIN GP1
 

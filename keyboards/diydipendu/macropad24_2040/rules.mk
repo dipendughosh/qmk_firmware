@@ -17,3 +17,5 @@ WPM_ENABLE = yes
 
 # Set the QMK target to RP2040
 # BOOTLOADER = rp2040
+
+# BOOTMAGIC_ENABLE = yes

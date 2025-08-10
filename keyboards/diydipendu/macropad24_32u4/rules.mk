@@ -14,3 +14,5 @@ WPM_ENABLE = yes
 # Optional: Set the display size and a timeout
 # OLED_DISPLAY_128X64 = yes
 # OLED_TIMEOUT = 10000 # 10 seconds
+
+# BOOTMAGIC_ENABLE = yes
