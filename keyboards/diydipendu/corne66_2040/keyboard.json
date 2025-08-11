@@ -11,7 +11,8 @@
         "bootmagic": true,
         "mousekey": true,
         "extrakey": true,
-        "console": true
+        "console": true,
+        "oled": true
     },
     "bootmagic": {
         "matrix": [0, 6]
