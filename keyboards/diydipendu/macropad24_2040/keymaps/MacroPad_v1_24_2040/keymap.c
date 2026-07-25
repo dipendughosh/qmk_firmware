@@ -61,6 +61,22 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 void keyboard_post_init_user(void) {
     debug_enable = true;
     debug_matrix = true;
+
+    rgblight_enable_noeeprom();
+    rgblight_mode_noeeprom(RGBLIGHT_MODE_STATIC_LIGHT);
+    rgblight_sethsv_noeeprom(0, 255, 255);
+}
+
+// Step the onboard RGB LED to the next hue once a second.
+void housekeeping_task_user(void) {
+    static uint32_t rgb_cycle_timer = 0;
+    static uint8_t  rgb_hue         = 0;
+
+    if (timer_elapsed32(rgb_cycle_timer) >= 1000) {
+        rgb_cycle_timer = timer_read32();
+        rgb_hue += 32;
+        rgblight_sethsv_noeeprom(rgb_hue, 255, 255);
+    }
 }
 
 #ifdef OLED_ENABLE

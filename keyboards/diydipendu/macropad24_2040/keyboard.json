@@ -12,10 +12,11 @@
         "extrakey": true,
         "mousekey": true,
         "nkro": true,
-        "oled": true
+        "oled": true,
+        "rgblight": true
     },
     "bootmagic": {
-        "matrix": [0, 0]
+        "matrix": [3, 5]
     },
     "qmk": {
         "locking": {
@@ -26,6 +27,13 @@
     "matrix_pins": {
         "cols": [ "GP3", "GP4", "GP5", "GP6", "GP7", "GP8" ],
         "rows": [ "GP27", "GP26", "GP15", "GP14" ]
+    },
+    "rgblight": {
+        "led_count": 1
+    },
+    "ws2812": {
+        "pin": "GP16",
+        "driver": "vendor"
     },
     "diode_direction": "COL2ROW",
     "processor": "RP2040",
