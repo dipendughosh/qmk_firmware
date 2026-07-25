@@ -154,7 +154,7 @@ void render_splash(void) {
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (record->event.pressed) {
         // Reset the timer on every key press
-        oled_timer = timer_read();
+        oled_timer = timer_read32();
 
         // Check if the keycode is a standard key or a custom macro
         if (keycode >= SAFE_RANGE) {
@@ -380,7 +380,7 @@ bool oled_task_user(void) {
             oled_clear();
         }
         render_splash();
-    } else if (timer_elapsed(oled_timer) > KEY_DISPLAY_DURATION_MS) {
+    } else if (timer_elapsed32(oled_timer) > KEY_DISPLAY_DURATION_MS) {
         // If idle, show the layer name
         if (last_screen != OLED_SCREEN_LAYER) {
             last_screen = OLED_SCREEN_LAYER;
