@@ -19,3 +19,6 @@ WPM_ENABLE = yes
 # BOOTLOADER = rp2040
 
 # BOOTMAGIC_ENABLE = yes
+
+# Enable HID console so matrix debug output can be viewed with `qmk console`
+CONSOLE_ENABLE = yes

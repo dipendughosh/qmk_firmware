@@ -56,6 +56,13 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         MAC_TABS, MAC_WIN, MAC_TABSFT, MAC_TASKMG, MAC_TASKMG2, TO(0))
 };
 
+// Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
+// issues can be diagnosed without a multimeter.
+void keyboard_post_init_user(void) {
+    debug_enable = true;
+    debug_matrix = true;
+}
+
 #ifdef OLED_ENABLE
 
 // A variable to store the name of the last key pressed
