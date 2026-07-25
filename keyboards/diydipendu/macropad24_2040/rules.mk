@@ -5,7 +5,7 @@
 # OLED_DRIVER = ssd1306
 
 # Enable WPM to display your typing speed
-WPM_ENABLE = yes
+# WPM_ENABLE = yes
 
 # Define the I2C pins for the OLED. These are the correct pins for a Pro Micro.
 # I2C1_SDA = GP4
@@ -22,3 +22,6 @@ WPM_ENABLE = yes
 
 # Enable HID console so matrix debug output can be viewed with `qmk console`
 CONSOLE_ENABLE = yes
+
+# Enable human-readable keycode names (e.g. "KC_F1") for the OLED key display
+KEYCODE_STRING_ENABLE = yes

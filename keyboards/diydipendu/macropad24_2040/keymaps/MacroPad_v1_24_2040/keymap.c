@@ -84,8 +84,71 @@ void housekeeping_task_user(void) {
 // A variable to store the name of the last key pressed
 char last_key_pressed[20] = "";
 
+// The raw keycode of the last key pressed, formatted as hex
+char last_key_code[8] = "";
+
 // A timer to track when the keyboard is idle
 static uint32_t oled_timer = 0;
+
+// How long to show the boot splash before switching to the normal display.
+#define SPLASH_DURATION_MS 2000
+
+// How long to keep showing the last pressed key before falling back to the layer name.
+#define KEY_DISPLAY_DURATION_MS 500
+
+#define SPLASH_LINE1 "MacroPad"
+#define SPLASH_LINE2 "Dipendu Ghosh"
+
+// The glyph table backing the OLED_FONT_H set for this board (see lib/glcdfont.c).
+// It's declared non-static there so we can blit it manually at larger sizes below.
+extern const unsigned char font[];
+
+// Draws one character scaled up by an integer factor, top-left pixel at (x0, y0).
+static void oled_write_char_scaled(uint8_t x0, uint8_t y0, char c, uint8_t scale) {
+    uint8_t cast_data = (uint8_t)c;
+    if (cast_data < OLED_FONT_START || cast_data > OLED_FONT_END) {
+        return;
+    }
+
+    const uint8_t *glyph = &font[(cast_data - OLED_FONT_START) * OLED_FONT_WIDTH];
+    for (uint8_t col = 0; col < OLED_FONT_WIDTH; col++) {
+        uint8_t bits = pgm_read_byte(&glyph[col]);
+        for (uint8_t row = 0; row < 8; row++) {
+            bool on = bits & (1 << row);
+            for (uint8_t sx = 0; sx < scale; sx++) {
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    oled_write_pixel(x0 + col * scale + sx, y0 + row * scale + sy, on);
+                }
+            }
+        }
+    }
+}
+
+// Draws a string scaled up by an integer factor, horizontally centered, starting at pixel row y0.
+static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8_t scale) {
+    uint8_t  len         = strlen(str);
+    uint16_t text_width  = (uint16_t)len * OLED_FONT_WIDTH * scale;
+    uint8_t  x0          = (text_width < OLED_DISPLAY_WIDTH) ? (OLED_DISPLAY_WIDTH - text_width) / 2 : 0;
+
+    for (uint8_t i = 0; i < len; i++) {
+        oled_write_char_scaled(x0 + i * OLED_FONT_WIDTH * scale, y0, str[i], scale);
+    }
+}
+
+// Centered splash shown for the first SPLASH_DURATION_MS after power-on:
+// "MacroPad" (size 2), a blank line, then "Dipendu Ghosh" (size 1).
+void render_splash(void) {
+    const uint8_t large_scale  = 2;
+    const uint8_t small_scale  = 1;
+    uint8_t       large_height = OLED_FONT_HEIGHT * large_scale;
+    uint8_t       small_height = OLED_FONT_HEIGHT * small_scale;
+    uint8_t       gap_height   = small_height; // the blank line
+    uint8_t       total_height = large_height + gap_height + small_height;
+    uint8_t       start_y      = (OLED_DISPLAY_HEIGHT > total_height) ? (OLED_DISPLAY_HEIGHT - total_height) / 2 : 0;
+
+    oled_write_string_scaled_centered(SPLASH_LINE1, start_y, large_scale);
+    oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, small_scale);
+}
 
 // This function runs when a key is pressed or released
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
@@ -153,9 +216,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                     break;
             }
         } else {
-            // For standard keys, display the keycode number (useful for debugging)
-            sprintf(last_key_pressed, "0x%02X", keycode);
+            // For standard keys, display the human-readable keycode name
+            snprintf(last_key_pressed, sizeof(last_key_pressed), "%s", get_keycode_string(keycode));
         }
+
+        // Always keep the raw keycode value around to show under the name
+        snprintf(last_key_code, sizeof(last_key_code), "0x%04X", keycode);
 
         switch (keycode) {
             case MAC_CPY:
@@ -214,55 +280,119 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
-// This function renders the layer and WPM info
+// This function renders the current layer name, large and centered at the top of the screen
 void render_main_info(void) {
-    oled_set_cursor(0, 0);
-    // oled_clear();
+    // Only clear when the layer actually changes. OLED_UPDATE_PROCESS_LIMIT
+    // defaults to 1 block per frame, so clearing every frame (marking the
+    // whole buffer dirty each time) starves the flush and only the first
+    // block ever reaches the screen.
+    static int8_t last_rendered_layer = -1;
+    int8_t        current_layer       = get_highest_layer(layer_state);
+    if (current_layer != last_rendered_layer) {
+        last_rendered_layer = current_layer;
+        oled_clear();
+    }
 
-    // Display current layer
-    oled_write_P(PSTR("Layer: "), false);
-    switch (get_highest_layer(layer_state)) {
+    const char *layer_name;
+    switch (current_layer) {
         case _FUNCTION:
-            oled_write_P(PSTR("FUNCTION"), false);
+            layer_name = "FUNCTION";
             break;
         case _SPECIAL_FUNCTION:
-            oled_write_P(PSTR("SPECIAL"), false);
+            layer_name = "SPECIAL";
             break;
         case _NUMPAD:
-            oled_write_P(PSTR("NUMPAD"), false);
+            layer_name = "NUMPAD";
             break;
         case _MACROS:
-            oled_write_P(PSTR("MACROS"), false);
+            layer_name = "MACROS";
             break;
         default:
-            oled_write_P(PSTR("Undefined!!!!"), false);
+            layer_name = "UNDEFINED";
             break;
     }
-    oled_write_P(PSTR("               "), false);
 
-    // Display WPM
-    oled_set_cursor(0, 2);
-    char wpm_string[10];
-    sprintf(wpm_string, "WPM: %u", get_current_wpm());
-    oled_write(wpm_string, false);
+    oled_write_string_scaled_centered(layer_name, 0, 2);
+
+    // Display WPM to enable uncomment he below code and in rules.mk
+    // oled_set_cursor(0, 2);
+    // char wpm_string[10];
+    // sprintf(wpm_string, "WPM: %u", get_current_wpm());
+    // oled_write(wpm_string, false);
 }
 
-// This function renders the last pressed key info
+// This function renders the last pressed key: its name (large) above its raw
+// code (normal size), both centered on the screen as a block.
 void render_key_info(void) {
-    oled_set_cursor(0, 0);
+    // Only clear when the key actually changes (see render_main_info for why).
+    static char last_rendered_key[sizeof(last_key_pressed)] = "";
+    if (strcmp(last_key_pressed, last_rendered_key) != 0) {
+        strcpy(last_rendered_key, last_key_pressed);
+        oled_clear();
+    }
 
-    oled_write_P(PSTR("Pressed: "), false);
-    oled_write(last_key_pressed, false);
-    oled_write_P(PSTR("               "), false);
+    // Drop to 1x if the name is too long to fit the screen at 2x width.
+    uint8_t name_scale = 2;
+    if (strlen(last_key_pressed) * OLED_FONT_WIDTH * name_scale > OLED_DISPLAY_WIDTH) {
+        name_scale = 1;
+    }
+    const uint8_t name_rows  = name_scale; // scaled name height, in OLED_FONT_HEIGHT-tall row units
+    const uint8_t code_rows  = 1;
+    const uint8_t total_rows = name_rows + code_rows;
+
+    uint8_t max_chars = oled_max_chars();
+    uint8_t max_lines = oled_max_lines();
+    uint8_t start_row = (max_lines > total_rows) ? (max_lines - total_rows) / 2 : 0;
+
+    // Line 1: key name, larger font, centered
+    oled_write_string_scaled_centered(last_key_pressed, start_row * OLED_FONT_HEIGHT, name_scale);
+
+    // Line 2: raw keycode, normal (smaller) font, centered
+    uint8_t code_len = strlen(last_key_code);
+    oled_set_cursor((max_chars - code_len) / 2, start_row + name_rows);
+    oled_write(last_key_code, false);
 }
+
+// Which of the three screens is currently being shown. Used so we can clear
+// once whenever we *switch* screens, even if the content on the new screen
+// happens to be identical to what it showed last time it was up (e.g.
+// returning to the same layer name after a keypress) -- render_main_info()
+// and render_key_info() only clear on their own when their own content
+// changes, which isn't enough on its own to wipe leftovers from a *different*
+// screen that was showing a moment ago.
+typedef enum {
+    OLED_SCREEN_NONE,
+    OLED_SCREEN_SPLASH,
+    OLED_SCREEN_LAYER,
+    OLED_SCREEN_KEY,
+} oled_screen_t;
 
 bool oled_task_user(void) {
-    // The conditional logic to choose what to display
-    if (timer_elapsed(oled_timer) > 1500) { // 1.5 second timeout
-        // If idle, show layer and WPM
+    static oled_screen_t last_screen = OLED_SCREEN_NONE;
+
+    // The conditional logic to choose what to display.
+    // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
+    // which would make the splash reappear every time it wrapped.
+    if (timer_read32() < SPLASH_DURATION_MS) {
+        // Still within the boot splash window
+        if (last_screen != OLED_SCREEN_SPLASH) {
+            last_screen = OLED_SCREEN_SPLASH;
+            oled_clear();
+        }
+        render_splash();
+    } else if (timer_elapsed(oled_timer) > KEY_DISPLAY_DURATION_MS) {
+        // If idle, show the layer name
+        if (last_screen != OLED_SCREEN_LAYER) {
+            last_screen = OLED_SCREEN_LAYER;
+            oled_clear();
+        }
         render_main_info();
     } else {
         // If typing, show the last key pressed
+        if (last_screen != OLED_SCREEN_KEY) {
+            last_screen = OLED_SCREEN_KEY;
+            oled_clear();
+        }
         render_key_info();
     }
 
