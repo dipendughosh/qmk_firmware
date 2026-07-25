@@ -90,6 +90,9 @@ char last_key_code[8] = "";
 // A timer to track when the keyboard is idle
 static uint32_t oled_timer = 0;
 
+// How long to play the connect animation before the splash text appears.
+#define ANIM_DURATION_MS 1500
+
 // How long to show the boot splash before switching to the normal display.
 #define SPLASH_DURATION_MS 2000
 
@@ -97,7 +100,7 @@ static uint32_t oled_timer = 0;
 #define KEY_DISPLAY_DURATION_MS 500
 
 #define SPLASH_LINE1 "MacroPad"
-#define SPLASH_LINE2 "Dipendu Ghosh"
+#define SPLASH_LINE2 "Dikshant Ghosh"
 
 // The glyph table backing the OLED_FONT_H set for this board (see lib/glcdfont.c).
 // It's declared non-static there so we can blit it manually at larger sizes below.
@@ -133,6 +136,38 @@ static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8
     for (uint8_t i = 0; i < len; i++) {
         oled_write_char_scaled(x0 + i * OLED_FONT_WIDTH * scale, y0, str[i], scale);
     }
+}
+
+// Draws a rectangle. When filled is false, only the 1px border is drawn.
+static void oled_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool filled) {
+    for (uint8_t i = 0; i < w; i++) {
+        for (uint8_t j = 0; j < h; j++) {
+            bool is_border = (i == 0 || i == w - 1 || j == 0 || j == h - 1);
+            if (filled || is_border) {
+                oled_write_pixel(x + i, y + j, true);
+            }
+        }
+    }
+}
+
+// Connect animation: a bordered loading bar that fills up over ANIM_DURATION_MS.
+void render_boot_animation(uint32_t elapsed) {
+    const uint8_t bar_width  = 100;
+    const uint8_t bar_height = 12;
+    uint8_t       bar_x      = (OLED_DISPLAY_WIDTH - bar_width) / 2;
+    uint8_t       bar_y      = (OLED_DISPLAY_HEIGHT - bar_height) / 2;
+
+    oled_draw_rect(bar_x, bar_y, bar_width, bar_height, false);
+
+    const uint8_t inset  = 2;
+    uint8_t       inner_w = bar_width - (inset * 2);
+    uint8_t       inner_h = bar_height - (inset * 2);
+    uint16_t      fill_w  = (uint16_t)inner_w * elapsed / ANIM_DURATION_MS;
+    if (fill_w > inner_w) {
+        fill_w = inner_w;
+    }
+
+    oled_draw_rect(bar_x + inset, bar_y + inset, (uint8_t)fill_w, inner_h, true);
 }
 
 // Centered splash shown for the first SPLASH_DURATION_MS after power-on:
@@ -362,6 +397,7 @@ void render_key_info(void) {
 // screen that was showing a moment ago.
 typedef enum {
     OLED_SCREEN_NONE,
+    OLED_SCREEN_ANIM,
     OLED_SCREEN_SPLASH,
     OLED_SCREEN_LAYER,
     OLED_SCREEN_KEY,
@@ -372,9 +408,18 @@ bool oled_task_user(void) {
 
     // The conditional logic to choose what to display.
     // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
-    // which would make the splash reappear every time it wrapped.
-    if (timer_read32() < SPLASH_DURATION_MS) {
-        // Still within the boot splash window
+    // which would make the boot sequence reappear every time it wrapped.
+    uint32_t boot_elapsed = timer_read32();
+
+    if (boot_elapsed < ANIM_DURATION_MS) {
+        // Still within the connect animation window
+        if (last_screen != OLED_SCREEN_ANIM) {
+            last_screen = OLED_SCREEN_ANIM;
+            oled_clear();
+        }
+        render_boot_animation(boot_elapsed);
+    } else if (boot_elapsed < ANIM_DURATION_MS + SPLASH_DURATION_MS) {
+        // Animation finished, now within the boot splash window
         if (last_screen != OLED_SCREEN_SPLASH) {
             last_screen = OLED_SCREEN_SPLASH;
             oled_clear();
