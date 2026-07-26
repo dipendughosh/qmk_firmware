@@ -75,6 +75,21 @@ static bool reset_fired = false;
 // reset so the whole intro replays without power-cycling the board.
 static uint32_t boot_timer = 0;
 
+// Holding this key toggles the OLED on/off, so the user can keep the screen
+// dark if they prefer. Unlike the reset key, this one has a real action on
+// every layer (KC_ESC, MAC_TASKMG2, ...), so its press is held back and only
+// replayed if the press turns out to be a short tap.
+#define OLED_TOGGLE_HOLD_MS 1500
+#define OLED_TOGGLE_KEY_ROW 3
+#define OLED_TOGGLE_KEY_COL 4
+
+static bool     oled_toggle_key_held  = false;
+static uint32_t oled_toggle_key_timer = 0;
+static bool     oled_toggle_fired     = false;
+
+// User's on/off preference for the display.
+static bool oled_user_enabled = true;
+
 // Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
 // issues can be diagnosed without a multimeter.
 void keyboard_post_init_user(void) {
@@ -106,6 +121,13 @@ void housekeeping_task_user(void) {
 
         layer_clear();
         boot_timer = timer_read32();
+    }
+
+    if (oled_toggle_key_held && timer_elapsed32(oled_toggle_key_timer) >= OLED_TOGGLE_HOLD_MS) {
+        oled_toggle_key_held = false;
+        oled_toggle_fired    = true;
+
+        oled_user_enabled = !oled_user_enabled;
     }
 }
 
@@ -217,8 +239,161 @@ void render_splash(void) {
     oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, large_scale);
 }
 
+// Records the name/code of the key just pressed, for the OLED to show.
+static void set_last_key_display(uint16_t keycode) {
+    // Check if the keycode is a standard key or a custom macro
+    if (keycode >= SAFE_RANGE) {
+        // For custom keycodes, display a special message
+        switch (keycode) {
+            case MAC_CPY:
+                sprintf(last_key_pressed, "Copy");
+                break;
+            case MAC_CUT:
+                sprintf(last_key_pressed, "Cut");
+                break;
+            case MAC_PST:
+                sprintf(last_key_pressed, "Paste");
+                break;
+            case MAC_UNDO:
+                sprintf(last_key_pressed, "Undo");
+                break;
+            case MAC_REDO:
+                sprintf(last_key_pressed, "Redo");
+                break;
+            case MAC_SAVE:
+                sprintf(last_key_pressed, "Save");
+                break;
+            case MAC_SELALL:
+                sprintf(last_key_pressed, "Select All");
+                break;
+            case MAC_FIND:
+                sprintf(last_key_pressed, "Find");
+                break;
+            case MAC_CLOSE:
+                sprintf(last_key_pressed, "Close");
+                break;
+            case MAC_NEWTAB:
+                sprintf(last_key_pressed, "New Tab");
+                break;
+            case MAC_NEWWIN:
+                sprintf(last_key_pressed, "New Window");
+                break;
+            case MAC_REL:
+                sprintf(last_key_pressed, "Reload");
+                break;
+            case MAC_TABS:
+                sprintf(last_key_pressed, "Cycle Tabs");
+                break;
+            case MAC_WIN:
+                sprintf(last_key_pressed, "Cycle Windows");
+                break;
+            case MAC_TABSFT:
+                sprintf(last_key_pressed, "Tab Shift");
+                break;
+            case MAC_TASKMG:
+                sprintf(last_key_pressed, "Task Manager");
+                break;
+            case MAC_TASKMG2:
+                sprintf(last_key_pressed, "Task Manager");
+                break;
+            default:
+                sprintf(last_key_pressed, "Macro");
+                break;
+        }
+    } else {
+        // For standard keys, display the human-readable keycode name
+        snprintf(last_key_pressed, sizeof(last_key_pressed), "%s", get_keycode_string(keycode));
+    }
+
+    // Always keep the raw keycode value around to show under the name
+    snprintf(last_key_code, sizeof(last_key_code), "0x%04X", keycode);
+}
+
+// Sends the keystrokes for one of our custom macros. Returns false if the
+// keycode isn't a macro, so the caller can fall back to normal handling.
+static bool send_macro_action(uint16_t keycode) {
+    switch (keycode) {
+        case MAC_CPY:
+            tap_code16(LCTL(KC_C));
+            return true;
+        case MAC_CUT:
+            tap_code16(LCTL(KC_X));
+            return true;
+        case MAC_PST:
+            tap_code16(LCTL(KC_V));
+            return true;
+        case MAC_UNDO:
+            tap_code16(LCTL(KC_Z));
+            return true;
+        case MAC_REDO:
+            tap_code16(LCTL(KC_Y));
+            return true;
+        case MAC_SAVE:
+            tap_code16(LCTL(KC_S));
+            return true;
+        case MAC_SELALL:
+            tap_code16(LCTL(KC_A));
+            return true;
+        case MAC_FIND:
+            tap_code16(LCTL(KC_F));
+            return true;
+        case MAC_CLOSE:
+            tap_code16(LCTL(KC_W));
+            return true;
+        case MAC_NEWTAB:
+            tap_code16(LCTL(KC_T));
+            return true;
+        case MAC_NEWWIN:
+            tap_code16(LCTL(KC_N));
+            return true;
+        case MAC_REL:
+            tap_code16(LCTL(KC_R));
+            return true;
+        case MAC_TABS:
+            tap_code16(LCTL(KC_TAB));
+            return true;
+        case MAC_WIN:
+            tap_code16(LALT(KC_TAB));
+            return true;
+        case MAC_TABSFT:
+            tap_code16(LSFT(KC_TAB));
+            return true;
+        case MAC_TASKMG:
+            tap_code16(LCTL(LALT(KC_DEL)));
+            return true;
+        case MAC_TASKMG2:
+            tap_code16(LCTL(LSFT(KC_ESC)));
+            return true;
+    }
+    return false;
+}
+
 // This function runs when a key is pressed or released
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    // The OLED toggle key: hold it back on press so a long hold can turn the
+    // screen on/off without also firing its normal action (which on some
+    // layers is Task Manager). A short tap replays that action on release.
+    if (record->event.key.row == OLED_TOGGLE_KEY_ROW && record->event.key.col == OLED_TOGGLE_KEY_COL) {
+        if (record->event.pressed) {
+            oled_toggle_key_held  = true;
+            oled_toggle_key_timer = timer_read32();
+        } else {
+            oled_toggle_key_held = false;
+
+            if (oled_toggle_fired) {
+                // The hold already toggled the display; swallow the tap action.
+                oled_toggle_fired = false;
+            } else {
+                oled_timer = timer_read32();
+                set_last_key_display(keycode);
+                if (!send_macro_action(keycode)) {
+                    tap_code16(keycode);
+                }
+            }
+        }
+        return false;
+    }
+
     // Track holds on the reset key. A short tap keeps its normal layer action;
     // once a hold has fired the reset we swallow the release so TG()/TO()
     // (which act ON_RELEASE) don't drag us straight back off layer 0.
@@ -239,125 +414,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         // Reset the timer on every key press
         oled_timer = timer_read32();
 
-        // Check if the keycode is a standard key or a custom macro
-        if (keycode >= SAFE_RANGE) {
-            // For custom keycodes, display a special message
-            switch (keycode) {
-                case MAC_CPY:
-                    sprintf(last_key_pressed, "Copy");
-                    break;
-                case MAC_CUT:
-                    sprintf(last_key_pressed, "Cut");
-                    break;
-                case MAC_PST:
-                    sprintf(last_key_pressed, "Paste");
-                    break;
-                case MAC_UNDO:
-                    sprintf(last_key_pressed, "Undo");
-                    break;
-                case MAC_REDO:
-                    sprintf(last_key_pressed, "Redo");
-                    break;
-                case MAC_SAVE:
-                    sprintf(last_key_pressed, "Save");
-                    break;
-                case MAC_SELALL:
-                    sprintf(last_key_pressed, "Select All");
-                    break;
-                case MAC_FIND:
-                    sprintf(last_key_pressed, "Find");
-                    break;
-                case MAC_CLOSE:
-                    sprintf(last_key_pressed, "Close");
-                    break;
-                case MAC_NEWTAB:
-                    sprintf(last_key_pressed, "New Tab");
-                    break;
-                case MAC_NEWWIN:
-                    sprintf(last_key_pressed, "New Window");
-                    break;
-                case MAC_REL:
-                    sprintf(last_key_pressed, "Reload");
-                    break;
-                case MAC_TABS:
-                    sprintf(last_key_pressed, "Cycle Tabs");
-                    break;
-                case MAC_WIN:
-                    sprintf(last_key_pressed, "Cycle Windows");
-                    break;
-                case MAC_TABSFT:
-                    sprintf(last_key_pressed, "Tab Shift");
-                    break;
-                case MAC_TASKMG:
-                    sprintf(last_key_pressed, "Task Manager");
-                    break;
-                case MAC_TASKMG2:
-                    sprintf(last_key_pressed, "Task Manager");
-                    break;
-                default:
-                    sprintf(last_key_pressed, "Macro");
-                    break;
-            }
-        } else {
-            // For standard keys, display the human-readable keycode name
-            snprintf(last_key_pressed, sizeof(last_key_pressed), "%s", get_keycode_string(keycode));
-        }
+        set_last_key_display(keycode);
 
-        // Always keep the raw keycode value around to show under the name
-        snprintf(last_key_code, sizeof(last_key_code), "0x%04X", keycode);
-
-        switch (keycode) {
-            case MAC_CPY:
-                tap_code16(LCTL(KC_C));
-                return false;
-            case MAC_CUT:
-                tap_code16(LCTL(KC_X));
-                return false;
-            case MAC_PST:
-                tap_code16(LCTL(KC_V));
-                return false;
-            case MAC_UNDO:
-                tap_code16(LCTL(KC_Z));
-                return false;
-            case MAC_REDO:
-                tap_code16(LCTL(KC_Y));
-                return false;
-            case MAC_SAVE:
-                tap_code16(LCTL(KC_S));
-                return false;
-            case MAC_SELALL:
-                tap_code16(LCTL(KC_A));
-                return false;
-            case MAC_FIND:
-                tap_code16(LCTL(KC_F));
-                return false;
-            case MAC_CLOSE:
-                tap_code16(LCTL(KC_W));
-                return false;
-            case MAC_NEWTAB:
-                tap_code16(LCTL(KC_T));
-                return false;
-            case MAC_NEWWIN:
-                tap_code16(LCTL(KC_N));
-                return false;
-            case MAC_REL:
-                tap_code16(LCTL(KC_R));
-                return false;
-            case MAC_TABS:
-                tap_code16(LCTL(KC_TAB));
-                return false;
-            case MAC_WIN:
-                tap_code16(LALT(KC_TAB));
-                return false;
-            case MAC_TABSFT:
-                tap_code16(LSFT(KC_TAB));
-                return false;
-            case MAC_TASKMG:
-                tap_code16(LCTL(LALT(KC_DEL)));
-                return false;
-            case MAC_TASKMG2:
-                tap_code16(LCTL(LSFT(KC_ESC)));
-                return false;
+        if (send_macro_action(keycode)) {
+            return false;
         }
     }
     return true;
@@ -453,6 +513,26 @@ typedef enum {
 
 bool oled_task_user(void) {
     static oled_screen_t last_screen = OLED_SCREEN_NONE;
+
+    // User has held the toggle key to turn the screen off. QMK re-wakes the
+    // OLED on any key activity, so keep asserting the off state here rather
+    // than switching it off once.
+    static bool was_user_enabled = true;
+
+    if (!oled_user_enabled) {
+        oled_off();
+        was_user_enabled = false;
+        // Force a full repaint whenever the screen comes back.
+        last_screen = OLED_SCREEN_NONE;
+        return false;
+    }
+
+    if (!was_user_enabled) {
+        // Just switched back on. Wake it once here; after this, leave the
+        // display alone so the normal OLED_TIMEOUT sleep still works.
+        was_user_enabled = true;
+        oled_on();
+    }
 
     // The conditional logic to choose what to display.
     // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
