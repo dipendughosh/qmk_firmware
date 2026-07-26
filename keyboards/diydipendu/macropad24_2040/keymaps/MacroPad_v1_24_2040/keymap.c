@@ -130,7 +130,7 @@ static uint32_t oled_timer = 0;
 #define KEY_DISPLAY_DURATION_MS 500
 
 #define SPLASH_LINE1 "MacroPad"
-#define SPLASH_LINE2 "Dikshant Ghosh"
+#define SPLASH_LINE2 "DiGhosh"
 
 // The glyph table backing the OLED_FONT_H set for this board (see lib/glcdfont.c).
 // It's declared non-static there so we can blit it manually at larger sizes below.
@@ -208,11 +208,13 @@ void render_splash(void) {
     uint8_t       large_height = OLED_FONT_HEIGHT * large_scale;
     uint8_t       small_height = OLED_FONT_HEIGHT * small_scale;
     uint8_t       gap_height   = small_height; // the blank line
-    uint8_t       total_height = large_height + gap_height + small_height;
+    // uint8_t       total_height = large_height + gap_height + small_height;
+    uint8_t       total_height = large_height + gap_height + large_height;
     uint8_t       start_y      = (OLED_DISPLAY_HEIGHT > total_height) ? (OLED_DISPLAY_HEIGHT - total_height) / 2 : 0;
 
     oled_write_string_scaled_centered(SPLASH_LINE1, start_y, large_scale);
-    oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, small_scale);
+    // oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, small_scale);
+    oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, large_scale);
 }
 
 // This function runs when a key is pressed or released
