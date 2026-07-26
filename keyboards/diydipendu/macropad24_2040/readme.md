@@ -40,6 +40,11 @@ Build the featured keymap explicitly with `-km`:
 
     qmk compile -kb diydipendu/macropad24_2040 -km MacroPad_v1_24_2040
 
+That only writes a `.uf2` into `.build/`. To put it on the board, use `flash`
+instead, with the board already in bootloader mode (see below):
+
+    qmk flash -kb diydipendu/macropad24_2040 -km MacroPad_v1_24_2040
+
 To avoid repeating `-km` on every command, set it as your default keymap once:
 
     qmk config user.keymap=MacroPad_v1_24_2040
@@ -59,10 +64,19 @@ any other keymap:
 
 ## Bootloader
 
-Enter the bootloader in any of these ways:
+Flashing always needs the board in bootloader mode first -- this applies to
+`qmk flash` as much as to copying the file by hand. Enter it in any of these
+ways:
 
 * **Bootmagic reset**: hold the bottom-right key (matrix `[3,5]`) and plug in the board.
 * **Physical reset button**: press the `BOOT` button on the RP2040-Zero while plugging it in.
 * **Keycode in layout**: press the key mapped to `QK_BOOT`, if the keymap defines one.
 
-The board appears as a USB mass-storage device; copy the `.uf2` onto it to flash.
+The board then appears as a USB mass-storage drive, and you have two options:
+
+* `qmk flash -kb diydipendu/macropad24_2040 -km <keymap>` builds and copies the
+  `.uf2` across for you.
+* Or drag `.build/diydipendu_macropad24_2040_<keymap>.uf2` onto the drive
+  yourself, which is handy if `qmk flash` cannot find the device.
+
+The board reboots into the new firmware as soon as the copy finishes.
