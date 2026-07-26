@@ -1,10 +1,10 @@
 {
-    "keyboard_name": "MAC24",
-    "manufacturer": "Dipendu/Macropad24",
+    "keyboard_name": "MacroPad24_RP2040",
+    "manufacturer": "DiGhosh",
     "maintainer": "qmk",
     "usb": {
         "vid": "0xFEED",
-        "pid": "0x0000",
+        "pid": "0x2440",
         "device_version": "0.0.1"
     },
     "features": {
