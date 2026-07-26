@@ -94,19 +94,22 @@ static bool oled_user_enabled = true;
 // effect, so the user gets feedback that the hold registered.
 typedef enum {
     MSG_NONE,
-    MSG_RESETTING,
     MSG_SCREEN_OFF,
     MSG_SCREEN_ON,
 } oled_message_t;
 
-#define RESET_MSG_TEXT "Reseting"
-#define RESET_MSG_DOTS 5
-#define RESET_MSG_DOT_MS 120
-#define RESET_MSG_TOTAL_MS (RESET_MSG_DOTS * RESET_MSG_DOT_MS)
 #define SCREEN_MSG_MS 500
 
 static oled_message_t oled_message       = MSG_NONE;
 static uint32_t       oled_message_timer = 0;
+
+// Label drawn above the progress bar, wording depending on whether the boot
+// sequence came from a power-on or a soft reset.
+#define BOOT_MSG_TEXT "Starting"
+#define RESET_MSG_TEXT "Reseting"
+#define BOOT_MSG_DOTS 5
+
+static bool boot_from_reset = false;
 
 // Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
 // issues can be diagnosed without a multimeter.
@@ -132,14 +135,15 @@ void housekeeping_task_user(void) {
     }
 
     // Fire while the key is still down so the reset feels immediate rather
-    // than waiting for release. Both long presses first put a confirmation
-    // message on screen; the action itself lands when that message expires.
+    // than waiting for release. The "Reseting" label rides along with the boot
+    // animation rather than getting its own screen first.
     if (reset_key_held && timer_elapsed32(reset_key_timer) >= RESET_HOLD_MS) {
         reset_key_held = false;
         reset_fired    = true;
 
-        oled_message       = MSG_RESETTING;
-        oled_message_timer = timer_read32();
+        boot_from_reset = true;
+        layer_clear();
+        boot_timer = timer_read32();
     }
 
     if (oled_toggle_key_held && timer_elapsed32(oled_toggle_key_timer) >= OLED_TOGGLE_HOLD_MS) {
@@ -159,13 +163,6 @@ void housekeeping_task_user(void) {
 
     // Apply whatever the expiring message was announcing.
     switch (oled_message) {
-        case MSG_RESETTING:
-            if (timer_elapsed32(oled_message_timer) >= RESET_MSG_TOTAL_MS) {
-                oled_message = MSG_NONE;
-                layer_clear();
-                boot_timer = timer_read32();
-            }
-            break;
         case MSG_SCREEN_OFF:
             if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
                 oled_message      = MSG_NONE;
@@ -261,12 +258,45 @@ static void oled_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool fill
     }
 }
 
-// Connect animation: a bordered loading bar that fills up over ANIM_DURATION_MS.
+// Connect animation: a "Starting..." / "Reseting..." label above a bordered
+// loading bar that fills up over ANIM_DURATION_MS, with the dots keeping pace
+// with the fill.
 void render_boot_animation(uint32_t elapsed) {
     const uint8_t bar_width  = 100;
     const uint8_t bar_height = 12;
     uint8_t       bar_x      = (OLED_DISPLAY_WIDTH - bar_width) / 2;
-    uint8_t       bar_y      = (OLED_DISPLAY_HEIGHT - bar_height) / 2;
+
+    const char *label = boot_from_reset ? RESET_MSG_TEXT : BOOT_MSG_TEXT;
+
+    const uint8_t gap     = 6;
+    uint8_t       max_len = strlen(label) + BOOT_MSG_DOTS;
+    uint8_t       scale   = ((uint16_t)max_len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
+    uint8_t       label_h = OLED_FONT_HEIGHT * scale;
+    uint8_t       block_h = label_h + gap + bar_height;
+    uint8_t       label_y = (OLED_DISPLAY_HEIGHT > block_h) ? (OLED_DISPLAY_HEIGHT - block_h) / 2 : 0;
+
+    // One dot per slice of the animation, so text and bar finish together.
+    uint8_t dots = elapsed / (ANIM_DURATION_MS / (BOOT_MSG_DOTS + 1));
+    if (dots > BOOT_MSG_DOTS) {
+        dots = BOOT_MSG_DOTS;
+    }
+
+    char    buf[24];
+    uint8_t len = 0;
+    while (label[len] != '\0' && len < sizeof(buf) - 1) {
+        buf[len] = label[len];
+        len++;
+    }
+    for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
+        buf[len++] = '.';
+    }
+    buf[len] = '\0';
+
+    // Anchor to the full-length string so the text doesn't creep sideways
+    // as dots appear (and doesn't leave stale pixels behind).
+    oled_write_string_scaled_at(buf, oled_centered_x(max_len, scale), label_y, scale);
+
+    uint8_t bar_y = label_y + label_h + gap;
 
     oled_draw_rect(bar_x, bar_y, bar_width, bar_height, false);
 
@@ -299,50 +329,26 @@ void render_splash(void) {
 }
 
 // Draws the current long-press confirmation message, centered on one line.
-// "Reseting" grows a dot at a time; its position is fixed to the full-length
-// string so the text doesn't creep sideways as the dots appear.
 void render_message(void) {
     const char *text;
-    uint8_t     max_len;
-    uint8_t     dots = 0;
 
     switch (oled_message) {
-        case MSG_RESETTING:
-            text    = RESET_MSG_TEXT;
-            max_len = strlen(RESET_MSG_TEXT) + RESET_MSG_DOTS;
-            dots    = timer_elapsed32(oled_message_timer) / RESET_MSG_DOT_MS;
-            if (dots > RESET_MSG_DOTS) {
-                dots = RESET_MSG_DOTS;
-            }
-            break;
         case MSG_SCREEN_OFF:
-            text    = "Screen Off";
-            max_len = strlen(text);
+            text = "Screen Off";
             break;
         case MSG_SCREEN_ON:
-            text    = "Screen On";
-            max_len = strlen(text);
+            text = "Screen On";
             break;
         default:
             return;
     }
 
-    // Shrink to 1x only if the longest form of the message won't fit at 2x.
-    uint8_t scale = ((uint16_t)max_len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
-
-    char    buf[24];
-    uint8_t len = 0;
-    while (text[len] != '\0' && len < sizeof(buf) - 1) {
-        buf[len] = text[len];
-        len++;
-    }
-    for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
-        buf[len++] = '.';
-    }
-    buf[len] = '\0';
+    // Shrink to 1x only if the message won't fit at 2x.
+    uint8_t len   = strlen(text);
+    uint8_t scale = ((uint16_t)len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
 
     uint8_t y0 = (OLED_DISPLAY_HEIGHT > OLED_FONT_HEIGHT * scale) ? (OLED_DISPLAY_HEIGHT - OLED_FONT_HEIGHT * scale) / 2 : 0;
-    oled_write_string_scaled_at(buf, oled_centered_x(max_len, scale), y0, scale);
+    oled_write_string_scaled_centered(text, y0, scale);
 }
 
 // Records the name/code of the key just pressed, for the OLED to show.
