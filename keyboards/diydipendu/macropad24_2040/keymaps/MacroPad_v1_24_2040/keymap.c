@@ -56,6 +56,25 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         MAC_TABS, MAC_WIN, MAC_TABSFT, MAC_TASKMG, MAC_TASKMG2, TO(0))
 };
 
+// Holding the bottom-right key this long replays the boot sequence.
+#define RESET_HOLD_MS 1500
+
+// Matrix position of the key that triggers the soft reset.
+#define RESET_KEY_ROW 3
+#define RESET_KEY_COL 5
+
+// Set when the reset key goes down, cleared on release.
+static bool     reset_key_held  = false;
+static uint32_t reset_key_timer = 0;
+
+// Set once a hold has triggered the reset, so the key's own release action
+// (TG/TO, which fire ON_RELEASE) can be swallowed and not re-toggle a layer.
+static bool reset_fired = false;
+
+// Reference point for the boot animation/splash sequence. Rewound on soft
+// reset so the whole intro replays without power-cycling the board.
+static uint32_t boot_timer = 0;
+
 // Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
 // issues can be diagnosed without a multimeter.
 void keyboard_post_init_user(void) {
@@ -67,7 +86,8 @@ void keyboard_post_init_user(void) {
     rgblight_sethsv_noeeprom(0, 255, 255);
 }
 
-// Step the onboard RGB LED to the next hue once a second.
+// Step the onboard RGB LED to the next hue once a second, and watch for a
+// long press on the reset key.
 void housekeeping_task_user(void) {
     static uint32_t rgb_cycle_timer = 0;
     static uint8_t  rgb_hue         = 0;
@@ -76,6 +96,16 @@ void housekeeping_task_user(void) {
         rgb_cycle_timer = timer_read32();
         rgb_hue += 32;
         rgblight_sethsv_noeeprom(rgb_hue, 255, 255);
+    }
+
+    // Fire while the key is still down so the reset feels immediate rather
+    // than waiting for release.
+    if (reset_key_held && timer_elapsed32(reset_key_timer) >= RESET_HOLD_MS) {
+        reset_key_held = false;
+        reset_fired    = true;
+
+        layer_clear();
+        boot_timer = timer_read32();
     }
 }
 
@@ -187,6 +217,22 @@ void render_splash(void) {
 
 // This function runs when a key is pressed or released
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    // Track holds on the reset key. A short tap keeps its normal layer action;
+    // once a hold has fired the reset we swallow the release so TG()/TO()
+    // (which act ON_RELEASE) don't drag us straight back off layer 0.
+    if (record->event.key.row == RESET_KEY_ROW && record->event.key.col == RESET_KEY_COL) {
+        if (record->event.pressed) {
+            reset_key_held  = true;
+            reset_key_timer = timer_read32();
+        } else {
+            reset_key_held = false;
+            if (reset_fired) {
+                reset_fired = false;
+                return false;
+            }
+        }
+    }
+
     if (record->event.pressed) {
         // Reset the timer on every key press
         oled_timer = timer_read32();
@@ -409,7 +455,7 @@ bool oled_task_user(void) {
     // The conditional logic to choose what to display.
     // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
     // which would make the boot sequence reappear every time it wrapped.
-    uint32_t boot_elapsed = timer_read32();
+    uint32_t boot_elapsed = timer_elapsed32(boot_timer);
 
     if (boot_elapsed < ANIM_DURATION_MS) {
         // Still within the connect animation window
