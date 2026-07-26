@@ -90,6 +90,24 @@ static bool     oled_toggle_fired     = false;
 // User's on/off preference for the display.
 static bool oled_user_enabled = true;
 
+// Short-lived confirmation screens shown before a long-press action takes
+// effect, so the user gets feedback that the hold registered.
+typedef enum {
+    MSG_NONE,
+    MSG_RESETTING,
+    MSG_SCREEN_OFF,
+    MSG_SCREEN_ON,
+} oled_message_t;
+
+#define RESET_MSG_TEXT "Reseting"
+#define RESET_MSG_DOTS 5
+#define RESET_MSG_DOT_MS 120
+#define RESET_MSG_TOTAL_MS (RESET_MSG_DOTS * RESET_MSG_DOT_MS)
+#define SCREEN_MSG_MS 500
+
+static oled_message_t oled_message       = MSG_NONE;
+static uint32_t       oled_message_timer = 0;
+
 // Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
 // issues can be diagnosed without a multimeter.
 void keyboard_post_init_user(void) {
@@ -114,20 +132,53 @@ void housekeeping_task_user(void) {
     }
 
     // Fire while the key is still down so the reset feels immediate rather
-    // than waiting for release.
+    // than waiting for release. Both long presses first put a confirmation
+    // message on screen; the action itself lands when that message expires.
     if (reset_key_held && timer_elapsed32(reset_key_timer) >= RESET_HOLD_MS) {
         reset_key_held = false;
         reset_fired    = true;
 
-        layer_clear();
-        boot_timer = timer_read32();
+        oled_message       = MSG_RESETTING;
+        oled_message_timer = timer_read32();
     }
 
     if (oled_toggle_key_held && timer_elapsed32(oled_toggle_key_timer) >= OLED_TOGGLE_HOLD_MS) {
         oled_toggle_key_held = false;
         oled_toggle_fired    = true;
 
-        oled_user_enabled = !oled_user_enabled;
+        if (oled_user_enabled) {
+            // Announce first, then go dark once the message has been seen.
+            oled_message = MSG_SCREEN_OFF;
+        } else {
+            // Come back on right away so the message is actually visible.
+            oled_user_enabled = true;
+            oled_message      = MSG_SCREEN_ON;
+        }
+        oled_message_timer = timer_read32();
+    }
+
+    // Apply whatever the expiring message was announcing.
+    switch (oled_message) {
+        case MSG_RESETTING:
+            if (timer_elapsed32(oled_message_timer) >= RESET_MSG_TOTAL_MS) {
+                oled_message = MSG_NONE;
+                layer_clear();
+                boot_timer = timer_read32();
+            }
+            break;
+        case MSG_SCREEN_OFF:
+            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
+                oled_message      = MSG_NONE;
+                oled_user_enabled = false;
+            }
+            break;
+        case MSG_SCREEN_ON:
+            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
+                oled_message = MSG_NONE;
+            }
+            break;
+        case MSG_NONE:
+            break;
     }
 }
 
@@ -139,17 +190,16 @@ char last_key_pressed[20] = "";
 // The raw keycode of the last key pressed, formatted as hex
 char last_key_code[8] = "";
 
-// A timer to track when the keyboard is idle
-static uint32_t oled_timer = 0;
+// How many keys are physically down right now. While this is non-zero the key
+// info stays on screen, so holding a key doesn't flip to the layer name (and
+// then flash the *next* layer) partway through a long press.
+static uint8_t keys_held = 0;
 
 // How long to play the connect animation before the splash text appears.
 #define ANIM_DURATION_MS 1500
 
 // How long to show the boot splash before switching to the normal display.
 #define SPLASH_DURATION_MS 2000
-
-// How long to keep showing the last pressed key before falling back to the layer name.
-#define KEY_DISPLAY_DURATION_MS 500
 
 #define SPLASH_LINE1 "MacroPad"
 #define SPLASH_LINE2 "DiGhosh"
@@ -179,15 +229,24 @@ static void oled_write_char_scaled(uint8_t x0, uint8_t y0, char c, uint8_t scale
     }
 }
 
-// Draws a string scaled up by an integer factor, horizontally centered, starting at pixel row y0.
-static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8_t scale) {
-    uint8_t  len         = strlen(str);
-    uint16_t text_width  = (uint16_t)len * OLED_FONT_WIDTH * scale;
-    uint8_t  x0          = (text_width < OLED_DISPLAY_WIDTH) ? (OLED_DISPLAY_WIDTH - text_width) / 2 : 0;
+// Draws a string scaled up by an integer factor, top-left pixel at (x0, y0).
+static void oled_write_string_scaled_at(const char *str, uint8_t x0, uint8_t y0, uint8_t scale) {
+    uint8_t len = strlen(str);
 
     for (uint8_t i = 0; i < len; i++) {
         oled_write_char_scaled(x0 + i * OLED_FONT_WIDTH * scale, y0, str[i], scale);
     }
+}
+
+// The left edge a string of char_len characters needs to sit centered.
+static uint8_t oled_centered_x(uint8_t char_len, uint8_t scale) {
+    uint16_t text_width = (uint16_t)char_len * OLED_FONT_WIDTH * scale;
+    return (text_width < OLED_DISPLAY_WIDTH) ? (OLED_DISPLAY_WIDTH - text_width) / 2 : 0;
+}
+
+// Draws a string scaled up by an integer factor, horizontally centered, starting at pixel row y0.
+static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8_t scale) {
+    oled_write_string_scaled_at(str, oled_centered_x(strlen(str), scale), y0, scale);
 }
 
 // Draws a rectangle. When filled is false, only the 1px border is drawn.
@@ -237,6 +296,53 @@ void render_splash(void) {
     oled_write_string_scaled_centered(SPLASH_LINE1, start_y, large_scale);
     // oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, small_scale);
     oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, large_scale);
+}
+
+// Draws the current long-press confirmation message, centered on one line.
+// "Reseting" grows a dot at a time; its position is fixed to the full-length
+// string so the text doesn't creep sideways as the dots appear.
+void render_message(void) {
+    const char *text;
+    uint8_t     max_len;
+    uint8_t     dots = 0;
+
+    switch (oled_message) {
+        case MSG_RESETTING:
+            text    = RESET_MSG_TEXT;
+            max_len = strlen(RESET_MSG_TEXT) + RESET_MSG_DOTS;
+            dots    = timer_elapsed32(oled_message_timer) / RESET_MSG_DOT_MS;
+            if (dots > RESET_MSG_DOTS) {
+                dots = RESET_MSG_DOTS;
+            }
+            break;
+        case MSG_SCREEN_OFF:
+            text    = "Screen Off";
+            max_len = strlen(text);
+            break;
+        case MSG_SCREEN_ON:
+            text    = "Screen On";
+            max_len = strlen(text);
+            break;
+        default:
+            return;
+    }
+
+    // Shrink to 1x only if the longest form of the message won't fit at 2x.
+    uint8_t scale = ((uint16_t)max_len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
+
+    char    buf[24];
+    uint8_t len = 0;
+    while (text[len] != '\0' && len < sizeof(buf) - 1) {
+        buf[len] = text[len];
+        len++;
+    }
+    for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
+        buf[len++] = '.';
+    }
+    buf[len] = '\0';
+
+    uint8_t y0 = (OLED_DISPLAY_HEIGHT > OLED_FONT_HEIGHT * scale) ? (OLED_DISPLAY_HEIGHT - OLED_FONT_HEIGHT * scale) / 2 : 0;
+    oled_write_string_scaled_at(buf, oled_centered_x(max_len, scale), y0, scale);
 }
 
 // Records the name/code of the key just pressed, for the OLED to show.
@@ -370,25 +476,31 @@ static bool send_macro_action(uint16_t keycode) {
 
 // This function runs when a key is pressed or released
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    // The OLED toggle key: hold it back on press so a long hold can turn the
-    // screen on/off without also firing its normal action (which on some
-    // layers is Task Manager). A short tap replays that action on release.
+    // Keep the held-key count up to date before any early return below. The
+    // OLED shows key info for exactly as long as this is non-zero.
+    if (record->event.pressed) {
+        keys_held++;
+    } else if (keys_held > 0) {
+        keys_held--;
+    }
+
+    // The OLED toggle key: show its name on press like any other key, but hold
+    // the action back so a long hold can toggle the screen without also firing
+    // it (on some layers that action is Task Manager). A short tap runs the
+    // action on release; a long hold turns the display off instead.
     if (record->event.key.row == OLED_TOGGLE_KEY_ROW && record->event.key.col == OLED_TOGGLE_KEY_COL) {
         if (record->event.pressed) {
             oled_toggle_key_held  = true;
             oled_toggle_key_timer = timer_read32();
+            set_last_key_display(keycode);
         } else {
             oled_toggle_key_held = false;
 
             if (oled_toggle_fired) {
                 // The hold already toggled the display; swallow the tap action.
                 oled_toggle_fired = false;
-            } else {
-                oled_timer = timer_read32();
-                set_last_key_display(keycode);
-                if (!send_macro_action(keycode)) {
-                    tap_code16(keycode);
-                }
+            } else if (!send_macro_action(keycode)) {
+                tap_code16(keycode);
             }
         }
         return false;
@@ -411,9 +523,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     }
 
     if (record->event.pressed) {
-        // Reset the timer on every key press
-        oled_timer = timer_read32();
-
         set_last_key_display(keycode);
 
         if (send_macro_action(keycode)) {
@@ -505,6 +614,7 @@ void render_key_info(void) {
 // screen that was showing a moment ago.
 typedef enum {
     OLED_SCREEN_NONE,
+    OLED_SCREEN_MSG,
     OLED_SCREEN_ANIM,
     OLED_SCREEN_SPLASH,
     OLED_SCREEN_LAYER,
@@ -534,6 +644,17 @@ bool oled_task_user(void) {
         oled_on();
     }
 
+    // A long-press confirmation outranks everything else, including the boot
+    // sequence it may be about to kick off.
+    if (oled_message != MSG_NONE) {
+        if (last_screen != OLED_SCREEN_MSG) {
+            last_screen = OLED_SCREEN_MSG;
+            oled_clear();
+        }
+        render_message();
+        return true;
+    }
+
     // The conditional logic to choose what to display.
     // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
     // which would make the boot sequence reappear every time it wrapped.
@@ -553,15 +674,15 @@ bool oled_task_user(void) {
             oled_clear();
         }
         render_splash();
-    } else if (timer_elapsed32(oled_timer) > KEY_DISPLAY_DURATION_MS) {
-        // If idle, show the layer name
+    } else if (keys_held == 0) {
+        // Nothing held: show the layer name
         if (last_screen != OLED_SCREEN_LAYER) {
             last_screen = OLED_SCREEN_LAYER;
             oled_clear();
         }
         render_main_info();
     } else {
-        // If typing, show the last key pressed
+        // A key is down: show it for as long as it's held
         if (last_screen != OLED_SCREEN_KEY) {
             last_screen = OLED_SCREEN_KEY;
             oled_clear();
