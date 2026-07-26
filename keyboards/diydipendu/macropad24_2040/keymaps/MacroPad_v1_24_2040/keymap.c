@@ -1,12 +1,30 @@
+// Keymap for the DiGhosh MacroPad24 (RP2040).
+//
+// File layout:
+//   1. Enums          - layers, custom keycodes, internal state types
+//   2. Keymap         - the layer tables
+//   3. Configuration  - all tunable constants (timings, key positions, text)
+//   4. State          - module-level variables
+//   5. Key handling   - key name lookup and macro dispatch
+//   6. QMK callbacks  - the entry points QMK calls into
+//   7. OLED drawing   - low-level pixel/text primitives
+//   8. OLED screens   - one render_* function per screen, plus oled_task_user
+//
+// Everything OLED-specific lives in one #ifdef OLED_ENABLE block at the end.
+
 #include QMK_KEYBOARD_H
 #include <stdio.h> // Include this for sprintf to work correctly
 #include "oled_driver.h"
 
+/* -------------------------------------------------------------------------
+ * 1. Enums
+ * ---------------------------------------------------------------------- */
+
 enum layers {
-  _FUNCTION,
-  _SPECIAL_FUNCTION,
-  _NUMPAD,
-  _MACROS
+    _FUNCTION,
+    _SPECIAL_FUNCTION,
+    _NUMPAD,
+    _MACROS
 };
 
 // Define custom keycodes for your macros. This is the modern, flexible way.
@@ -29,6 +47,33 @@ enum custom_keycodes {
     MAC_TASKMG,
     MAC_TASKMG2
 };
+
+// Short-lived confirmation screens shown before a long-press action takes
+// effect, so the user gets feedback that the hold registered.
+typedef enum {
+    MSG_NONE,
+    MSG_SCREEN_OFF,
+    MSG_SCREEN_ON,
+} oled_message_t;
+
+// Which screen is currently being shown. Used so we can clear once whenever we
+// *switch* screens, even if the content on the new screen happens to be
+// identical to what it showed last time it was up (e.g. returning to the same
+// layer name after a keypress) -- the render_* functions only clear on their
+// own when their own content changes, which isn't enough on its own to wipe
+// leftovers from a *different* screen that was showing a moment ago.
+typedef enum {
+    OLED_SCREEN_NONE,
+    OLED_SCREEN_MSG,
+    OLED_SCREEN_ANIM,
+    OLED_SCREEN_SPLASH,
+    OLED_SCREEN_LAYER,
+    OLED_SCREEN_KEY,
+} oled_screen_t;
+
+/* -------------------------------------------------------------------------
+ * 2. Keymap
+ * ---------------------------------------------------------------------- */
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_FUNCTION] = LAYOUT_grid(
@@ -56,300 +101,93 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         MAC_TABS, MAC_WIN, MAC_TABSFT, MAC_TASKMG, MAC_TASKMG2, TO(0))
 };
 
-// Holding the bottom-right key this long replays the boot sequence.
-#define RESET_HOLD_MS 1500
+/* -------------------------------------------------------------------------
+ * 3. Configuration
+ * ---------------------------------------------------------------------- */
 
-// Matrix position of the key that triggers the soft reset.
+/* --- Long-press keys ------------------------------------------------------
+ * Two keys gain a second function when held. Both are tracked by matrix
+ * position rather than keycode, so they behave the same on every layer.
+ */
+
+// Bottom-right key: hold to replay the boot sequence (a soft reset).
 #define RESET_KEY_ROW 3
 #define RESET_KEY_COL 5
+#define RESET_HOLD_MS 1500
 
-// Set when the reset key goes down, cleared on release.
-static bool     reset_key_held  = false;
-static uint32_t reset_key_timer = 0;
-
-// Set once a hold has triggered the reset, so the key's own release action
-// (TG/TO, which fire ON_RELEASE) can be swallowed and not re-toggle a layer.
-static bool reset_fired = false;
-
-// Reference point for the boot animation/splash sequence. Rewound on soft
-// reset so the whole intro replays without power-cycling the board.
-static uint32_t boot_timer = 0;
-
-// Holding this key toggles the OLED on/off, so the user can keep the screen
-// dark if they prefer. Unlike the reset key, this one has a real action on
-// every layer (KC_ESC, MAC_TASKMG2, ...), so its press is held back and only
-// replayed if the press turns out to be a short tap.
-#define OLED_TOGGLE_HOLD_MS 1500
+// Key to its left: hold to turn the OLED off/on.
 #define OLED_TOGGLE_KEY_ROW 3
 #define OLED_TOGGLE_KEY_COL 4
+#define OLED_TOGGLE_HOLD_MS 1500
+
+/* --- Boot sequence -------------------------------------------------------- */
+
+// Loading bar, then the splash text, then normal operation.
+#define ANIM_DURATION_MS 1500
+#define SPLASH_DURATION_MS 2000
+
+// Label above the loading bar, wording depending on whether the boot sequence
+// came from a power-on or a soft reset.
+#define BOOT_MSG_TEXT "Starting"
+#define RESET_MSG_TEXT "Reseting"
+#define BOOT_MSG_DOTS 5
+
+// Splash text. Both lines are drawn at SPLASH_SCALE with a blank line between.
+#define SPLASH_LINE1 "MacroPad"
+#define SPLASH_LINE2 "DiGhosh"
+#define SPLASH_SCALE 2
+
+/* --- Long-press confirmations --------------------------------------------- */
+
+// How long "Screen Off"/"Screen On" stays up before the toggle takes effect.
+#define SCREEN_MSG_MS 500
+
+/* -------------------------------------------------------------------------
+ * 4. State
+ * ---------------------------------------------------------------------- */
+
+/* --- Long-press tracking --------------------------------------------------
+ * *_key_held is set while the key is down; *_fired records that the hold
+ * already ran, so the key's own release action can be swallowed.
+ */
+static bool     reset_key_held  = false;
+static uint32_t reset_key_timer = 0;
+static bool     reset_fired     = false;
 
 static bool     oled_toggle_key_held  = false;
 static uint32_t oled_toggle_key_timer = 0;
 static bool     oled_toggle_fired     = false;
 
-// User's on/off preference for the display.
+/* --- Boot sequence -------------------------------------------------------- */
+
+// Reference point for the boot animation/splash. Rewound on soft reset so the
+// whole intro replays without power-cycling the board.
+static uint32_t boot_timer = 0;
+
+// Whether the current run of the boot sequence came from a soft reset, which
+// only changes the label drawn above the loading bar.
+static bool boot_from_reset = false;
+
+/* --- Display state -------------------------------------------------------- */
+
+// User's on/off preference for the display, flipped by the long-press toggle.
 static bool oled_user_enabled = true;
-
-// Short-lived confirmation screens shown before a long-press action takes
-// effect, so the user gets feedback that the hold registered.
-typedef enum {
-    MSG_NONE,
-    MSG_SCREEN_OFF,
-    MSG_SCREEN_ON,
-} oled_message_t;
-
-#define SCREEN_MSG_MS 500
 
 static oled_message_t oled_message       = MSG_NONE;
 static uint32_t       oled_message_timer = 0;
-
-// Label drawn above the progress bar, wording depending on whether the boot
-// sequence came from a power-on or a soft reset.
-#define BOOT_MSG_TEXT "Starting"
-#define RESET_MSG_TEXT "Reseting"
-#define BOOT_MSG_DOTS 5
-
-static bool boot_from_reset = false;
-
-// Turn on raw matrix-scan printing over `qmk console` so ghosting/wiring
-// issues can be diagnosed without a multimeter.
-void keyboard_post_init_user(void) {
-    debug_enable = true;
-    debug_matrix = true;
-
-    rgblight_enable_noeeprom();
-    rgblight_mode_noeeprom(RGBLIGHT_MODE_STATIC_LIGHT);
-    rgblight_sethsv_noeeprom(0, 255, 255);
-}
-
-// Step the onboard RGB LED to the next hue once a second, and watch for a
-// long press on the reset key.
-void housekeeping_task_user(void) {
-    static uint32_t rgb_cycle_timer = 0;
-    static uint8_t  rgb_hue         = 0;
-
-    if (timer_elapsed32(rgb_cycle_timer) >= 1000) {
-        rgb_cycle_timer = timer_read32();
-        rgb_hue += 32;
-        rgblight_sethsv_noeeprom(rgb_hue, 255, 255);
-    }
-
-    // Fire while the key is still down so the reset feels immediate rather
-    // than waiting for release. The "Reseting" label rides along with the boot
-    // animation rather than getting its own screen first.
-    if (reset_key_held && timer_elapsed32(reset_key_timer) >= RESET_HOLD_MS) {
-        reset_key_held = false;
-        reset_fired    = true;
-
-        boot_from_reset = true;
-        layer_clear();
-        boot_timer = timer_read32();
-    }
-
-    if (oled_toggle_key_held && timer_elapsed32(oled_toggle_key_timer) >= OLED_TOGGLE_HOLD_MS) {
-        oled_toggle_key_held = false;
-        oled_toggle_fired    = true;
-
-        if (oled_user_enabled) {
-            // Announce first, then go dark once the message has been seen.
-            oled_message = MSG_SCREEN_OFF;
-        } else {
-            // Come back on right away so the message is actually visible.
-            oled_user_enabled = true;
-            oled_message      = MSG_SCREEN_ON;
-        }
-        oled_message_timer = timer_read32();
-    }
-
-    // Apply whatever the expiring message was announcing.
-    switch (oled_message) {
-        case MSG_SCREEN_OFF:
-            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
-                oled_message      = MSG_NONE;
-                oled_user_enabled = false;
-            }
-            break;
-        case MSG_SCREEN_ON:
-            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
-                oled_message = MSG_NONE;
-            }
-            break;
-        case MSG_NONE:
-            break;
-    }
-}
-
-#ifdef OLED_ENABLE
-
-// A variable to store the name of the last key pressed
-char last_key_pressed[20] = "";
-
-// The raw keycode of the last key pressed, formatted as hex
-char last_key_code[8] = "";
 
 // How many keys are physically down right now. While this is non-zero the key
 // info stays on screen, so holding a key doesn't flip to the layer name (and
 // then flash the *next* layer) partway through a long press.
 static uint8_t keys_held = 0;
 
-// How long to play the connect animation before the splash text appears.
-#define ANIM_DURATION_MS 1500
+// Name and raw code of the last key pressed, for the OLED to show.
+static char last_key_pressed[20] = "";
+static char last_key_code[8]     = "";
 
-// How long to show the boot splash before switching to the normal display.
-#define SPLASH_DURATION_MS 2000
-
-#define SPLASH_LINE1 "MacroPad"
-#define SPLASH_LINE2 "DiGhosh"
-
-// The glyph table backing the OLED_FONT_H set for this board (see lib/glcdfont.c).
-// It's declared non-static there so we can blit it manually at larger sizes below.
-extern const unsigned char font[];
-
-// Draws one character scaled up by an integer factor, top-left pixel at (x0, y0).
-static void oled_write_char_scaled(uint8_t x0, uint8_t y0, char c, uint8_t scale) {
-    uint8_t cast_data = (uint8_t)c;
-    if (cast_data < OLED_FONT_START || cast_data > OLED_FONT_END) {
-        return;
-    }
-
-    const uint8_t *glyph = &font[(cast_data - OLED_FONT_START) * OLED_FONT_WIDTH];
-    for (uint8_t col = 0; col < OLED_FONT_WIDTH; col++) {
-        uint8_t bits = pgm_read_byte(&glyph[col]);
-        for (uint8_t row = 0; row < 8; row++) {
-            bool on = bits & (1 << row);
-            for (uint8_t sx = 0; sx < scale; sx++) {
-                for (uint8_t sy = 0; sy < scale; sy++) {
-                    oled_write_pixel(x0 + col * scale + sx, y0 + row * scale + sy, on);
-                }
-            }
-        }
-    }
-}
-
-// Draws a string scaled up by an integer factor, top-left pixel at (x0, y0).
-static void oled_write_string_scaled_at(const char *str, uint8_t x0, uint8_t y0, uint8_t scale) {
-    uint8_t len = strlen(str);
-
-    for (uint8_t i = 0; i < len; i++) {
-        oled_write_char_scaled(x0 + i * OLED_FONT_WIDTH * scale, y0, str[i], scale);
-    }
-}
-
-// The left edge a string of char_len characters needs to sit centered.
-static uint8_t oled_centered_x(uint8_t char_len, uint8_t scale) {
-    uint16_t text_width = (uint16_t)char_len * OLED_FONT_WIDTH * scale;
-    return (text_width < OLED_DISPLAY_WIDTH) ? (OLED_DISPLAY_WIDTH - text_width) / 2 : 0;
-}
-
-// Draws a string scaled up by an integer factor, horizontally centered, starting at pixel row y0.
-static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8_t scale) {
-    oled_write_string_scaled_at(str, oled_centered_x(strlen(str), scale), y0, scale);
-}
-
-// Draws a rectangle. When filled is false, only the 1px border is drawn.
-static void oled_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool filled) {
-    for (uint8_t i = 0; i < w; i++) {
-        for (uint8_t j = 0; j < h; j++) {
-            bool is_border = (i == 0 || i == w - 1 || j == 0 || j == h - 1);
-            if (filled || is_border) {
-                oled_write_pixel(x + i, y + j, true);
-            }
-        }
-    }
-}
-
-// Connect animation: a "Starting..." / "Reseting..." label above a bordered
-// loading bar that fills up over ANIM_DURATION_MS, with the dots keeping pace
-// with the fill.
-void render_boot_animation(uint32_t elapsed) {
-    const uint8_t bar_width  = 100;
-    const uint8_t bar_height = 12;
-    uint8_t       bar_x      = (OLED_DISPLAY_WIDTH - bar_width) / 2;
-
-    const char *label = boot_from_reset ? RESET_MSG_TEXT : BOOT_MSG_TEXT;
-
-    const uint8_t gap     = 6;
-    uint8_t       max_len = strlen(label) + BOOT_MSG_DOTS;
-    uint8_t       scale   = ((uint16_t)max_len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
-    uint8_t       label_h = OLED_FONT_HEIGHT * scale;
-    uint8_t       block_h = label_h + gap + bar_height;
-    uint8_t       label_y = (OLED_DISPLAY_HEIGHT > block_h) ? (OLED_DISPLAY_HEIGHT - block_h) / 2 : 0;
-
-    // One dot per slice of the animation, so text and bar finish together.
-    uint8_t dots = elapsed / (ANIM_DURATION_MS / (BOOT_MSG_DOTS + 1));
-    if (dots > BOOT_MSG_DOTS) {
-        dots = BOOT_MSG_DOTS;
-    }
-
-    char    buf[24];
-    uint8_t len = 0;
-    while (label[len] != '\0' && len < sizeof(buf) - 1) {
-        buf[len] = label[len];
-        len++;
-    }
-    for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
-        buf[len++] = '.';
-    }
-    buf[len] = '\0';
-
-    // Anchor to the full-length string so the text doesn't creep sideways
-    // as dots appear (and doesn't leave stale pixels behind).
-    oled_write_string_scaled_at(buf, oled_centered_x(max_len, scale), label_y, scale);
-
-    uint8_t bar_y = label_y + label_h + gap;
-
-    oled_draw_rect(bar_x, bar_y, bar_width, bar_height, false);
-
-    const uint8_t inset  = 2;
-    uint8_t       inner_w = bar_width - (inset * 2);
-    uint8_t       inner_h = bar_height - (inset * 2);
-    uint16_t      fill_w  = (uint16_t)inner_w * elapsed / ANIM_DURATION_MS;
-    if (fill_w > inner_w) {
-        fill_w = inner_w;
-    }
-
-    oled_draw_rect(bar_x + inset, bar_y + inset, (uint8_t)fill_w, inner_h, true);
-}
-
-// Centered splash shown for the first SPLASH_DURATION_MS after power-on:
-// "MacroPad" (size 2), a blank line, then "Dipendu Ghosh" (size 1).
-void render_splash(void) {
-    const uint8_t large_scale  = 2;
-    const uint8_t small_scale  = 1;
-    uint8_t       large_height = OLED_FONT_HEIGHT * large_scale;
-    uint8_t       small_height = OLED_FONT_HEIGHT * small_scale;
-    uint8_t       gap_height   = small_height; // the blank line
-    // uint8_t       total_height = large_height + gap_height + small_height;
-    uint8_t       total_height = large_height + gap_height + large_height;
-    uint8_t       start_y      = (OLED_DISPLAY_HEIGHT > total_height) ? (OLED_DISPLAY_HEIGHT - total_height) / 2 : 0;
-
-    oled_write_string_scaled_centered(SPLASH_LINE1, start_y, large_scale);
-    // oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, small_scale);
-    oled_write_string_scaled_centered(SPLASH_LINE2, start_y + large_height + gap_height, large_scale);
-}
-
-// Draws the current long-press confirmation message, centered on one line.
-void render_message(void) {
-    const char *text;
-
-    switch (oled_message) {
-        case MSG_SCREEN_OFF:
-            text = "Screen Off";
-            break;
-        case MSG_SCREEN_ON:
-            text = "Screen On";
-            break;
-        default:
-            return;
-    }
-
-    // Shrink to 1x only if the message won't fit at 2x.
-    uint8_t len   = strlen(text);
-    uint8_t scale = ((uint16_t)len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
-
-    uint8_t y0 = (OLED_DISPLAY_HEIGHT > OLED_FONT_HEIGHT * scale) ? (OLED_DISPLAY_HEIGHT - OLED_FONT_HEIGHT * scale) / 2 : 0;
-    oled_write_string_scaled_centered(text, y0, scale);
-}
+/* -------------------------------------------------------------------------
+ * 5. Key handling
+ * ---------------------------------------------------------------------- */
 
 // Records the name/code of the key just pressed, for the OLED to show.
 static void set_last_key_display(uint16_t keycode) {
@@ -480,6 +318,77 @@ static bool send_macro_action(uint16_t keycode) {
     return false;
 }
 
+/* -------------------------------------------------------------------------
+ * 6. QMK callbacks
+ * ---------------------------------------------------------------------- */
+
+void keyboard_post_init_user(void) {
+    // Raw matrix-scan printing over `qmk console`, so ghosting/wiring issues
+    // can be diagnosed without a multimeter.
+    debug_enable = true;
+    debug_matrix = true;
+
+    rgblight_enable_noeeprom();
+    rgblight_mode_noeeprom(RGBLIGHT_MODE_STATIC_LIGHT);
+    rgblight_sethsv_noeeprom(0, 255, 255);
+}
+
+// Steps the onboard RGB LED, and drives both long-press actions.
+void housekeeping_task_user(void) {
+    static uint32_t rgb_cycle_timer = 0;
+    static uint8_t  rgb_hue         = 0;
+
+    if (timer_elapsed32(rgb_cycle_timer) >= 1000) {
+        rgb_cycle_timer = timer_read32();
+        rgb_hue += 32;
+        rgblight_sethsv_noeeprom(rgb_hue, 255, 255);
+    }
+
+    // Fire while the key is still down so the reset feels immediate rather
+    // than waiting for release. The "Reseting" label rides along with the boot
+    // animation rather than getting its own screen first.
+    if (reset_key_held && timer_elapsed32(reset_key_timer) >= RESET_HOLD_MS) {
+        reset_key_held = false;
+        reset_fired    = true;
+
+        boot_from_reset = true;
+        layer_clear();
+        boot_timer = timer_read32();
+    }
+
+    if (oled_toggle_key_held && timer_elapsed32(oled_toggle_key_timer) >= OLED_TOGGLE_HOLD_MS) {
+        oled_toggle_key_held = false;
+        oled_toggle_fired    = true;
+
+        if (oled_user_enabled) {
+            // Announce first, then go dark once the message has been seen.
+            oled_message = MSG_SCREEN_OFF;
+        } else {
+            // Come back on right away so the message is actually visible.
+            oled_user_enabled = true;
+            oled_message      = MSG_SCREEN_ON;
+        }
+        oled_message_timer = timer_read32();
+    }
+
+    // Apply whatever the expiring message was announcing.
+    switch (oled_message) {
+        case MSG_SCREEN_OFF:
+            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
+                oled_message      = MSG_NONE;
+                oled_user_enabled = false;
+            }
+            break;
+        case MSG_SCREEN_ON:
+            if (timer_elapsed32(oled_message_timer) >= SCREEN_MSG_MS) {
+                oled_message = MSG_NONE;
+            }
+            break;
+        case MSG_NONE:
+            break;
+    }
+}
+
 // This function runs when a key is pressed or released
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     // Keep the held-key count up to date before any early return below. The
@@ -538,8 +447,169 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
-// This function renders the current layer name, large and centered at the top of the screen
-void render_main_info(void) {
+#ifdef OLED_ENABLE
+
+/* -------------------------------------------------------------------------
+ * 7. OLED drawing primitives
+ *
+ * QMK's OLED driver has no runtime font scaling, so these read the glyph
+ * bitmaps directly and blit each pixel as an NxN block.
+ * ---------------------------------------------------------------------- */
+
+// The glyph table backing the OLED_FONT_H set for this board (see lib/glcdfont.c).
+// It's declared non-static there so we can blit it manually at larger sizes below.
+extern const unsigned char font[];
+
+// Draws one character scaled up by an integer factor, top-left pixel at (x0, y0).
+static void oled_write_char_scaled(uint8_t x0, uint8_t y0, char c, uint8_t scale) {
+    uint8_t cast_data = (uint8_t)c;
+    if (cast_data < OLED_FONT_START || cast_data > OLED_FONT_END) {
+        return;
+    }
+
+    const uint8_t *glyph = &font[(cast_data - OLED_FONT_START) * OLED_FONT_WIDTH];
+    for (uint8_t col = 0; col < OLED_FONT_WIDTH; col++) {
+        uint8_t bits = pgm_read_byte(&glyph[col]);
+        for (uint8_t row = 0; row < 8; row++) {
+            bool on = bits & (1 << row);
+            for (uint8_t sx = 0; sx < scale; sx++) {
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    oled_write_pixel(x0 + col * scale + sx, y0 + row * scale + sy, on);
+                }
+            }
+        }
+    }
+}
+
+// Draws a string scaled up by an integer factor, top-left pixel at (x0, y0).
+static void oled_write_string_scaled_at(const char *str, uint8_t x0, uint8_t y0, uint8_t scale) {
+    uint8_t len = strlen(str);
+
+    for (uint8_t i = 0; i < len; i++) {
+        oled_write_char_scaled(x0 + i * OLED_FONT_WIDTH * scale, y0, str[i], scale);
+    }
+}
+
+// The left edge a string of char_len characters needs to sit centered.
+static uint8_t oled_centered_x(uint8_t char_len, uint8_t scale) {
+    uint16_t text_width = (uint16_t)char_len * OLED_FONT_WIDTH * scale;
+    return (text_width < OLED_DISPLAY_WIDTH) ? (OLED_DISPLAY_WIDTH - text_width) / 2 : 0;
+}
+
+// Draws a string scaled up by an integer factor, horizontally centered, starting at pixel row y0.
+static void oled_write_string_scaled_centered(const char *str, uint8_t y0, uint8_t scale) {
+    oled_write_string_scaled_at(str, oled_centered_x(strlen(str), scale), y0, scale);
+}
+
+// The largest scale at which a string of char_len characters still fits across
+// the display, capped at 2x.
+static uint8_t oled_fitting_scale(uint8_t char_len) {
+    return ((uint16_t)char_len * OLED_FONT_WIDTH * 2 <= OLED_DISPLAY_WIDTH) ? 2 : 1;
+}
+
+// Draws a rectangle. When filled is false, only the 1px border is drawn.
+static void oled_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool filled) {
+    for (uint8_t i = 0; i < w; i++) {
+        for (uint8_t j = 0; j < h; j++) {
+            bool is_border = (i == 0 || i == w - 1 || j == 0 || j == h - 1);
+            if (filled || is_border) {
+                oled_write_pixel(x + i, y + j, true);
+            }
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * 8. OLED screens
+ * ---------------------------------------------------------------------- */
+
+// Connect animation: a "Starting..." / "Reseting..." label above a bordered
+// loading bar that fills up over ANIM_DURATION_MS, with the dots keeping pace
+// with the fill.
+static void render_boot_animation(uint32_t elapsed) {
+    const uint8_t bar_width  = 100;
+    const uint8_t bar_height = 12;
+    const uint8_t gap        = 6;
+
+    const char *label   = boot_from_reset ? RESET_MSG_TEXT : BOOT_MSG_TEXT;
+    uint8_t     max_len = strlen(label) + BOOT_MSG_DOTS;
+    uint8_t     scale   = oled_fitting_scale(max_len);
+    uint8_t     label_h = OLED_FONT_HEIGHT * scale;
+    uint8_t     block_h = label_h + gap + bar_height;
+    uint8_t     label_y = (OLED_DISPLAY_HEIGHT > block_h) ? (OLED_DISPLAY_HEIGHT - block_h) / 2 : 0;
+
+    // One dot per slice of the animation, so text and bar finish together.
+    uint8_t dots = elapsed / (ANIM_DURATION_MS / (BOOT_MSG_DOTS + 1));
+    if (dots > BOOT_MSG_DOTS) {
+        dots = BOOT_MSG_DOTS;
+    }
+
+    char    buf[24];
+    uint8_t len = 0;
+    while (label[len] != '\0' && len < sizeof(buf) - 1) {
+        buf[len] = label[len];
+        len++;
+    }
+    for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
+        buf[len++] = '.';
+    }
+    buf[len] = '\0';
+
+    // Anchor to the full-length string so the text doesn't creep sideways as
+    // dots appear (and doesn't leave stale pixels behind).
+    oled_write_string_scaled_at(buf, oled_centered_x(max_len, scale), label_y, scale);
+
+    uint8_t bar_x = (OLED_DISPLAY_WIDTH - bar_width) / 2;
+    uint8_t bar_y = label_y + label_h + gap;
+
+    oled_draw_rect(bar_x, bar_y, bar_width, bar_height, false);
+
+    const uint8_t inset   = 2;
+    uint8_t       inner_w = bar_width - (inset * 2);
+    uint8_t       inner_h = bar_height - (inset * 2);
+    uint16_t      fill_w  = (uint16_t)inner_w * elapsed / ANIM_DURATION_MS;
+    if (fill_w > inner_w) {
+        fill_w = inner_w;
+    }
+
+    oled_draw_rect(bar_x + inset, bar_y + inset, (uint8_t)fill_w, inner_h, true);
+}
+
+// Centered splash shown after the animation: SPLASH_LINE1, a blank line, then
+// SPLASH_LINE2.
+static void render_splash(void) {
+    uint8_t line_height  = OLED_FONT_HEIGHT * SPLASH_SCALE;
+    uint8_t gap_height   = OLED_FONT_HEIGHT; // the blank line
+    uint8_t total_height = line_height * 2 + gap_height;
+    uint8_t start_y      = (OLED_DISPLAY_HEIGHT > total_height) ? (OLED_DISPLAY_HEIGHT - total_height) / 2 : 0;
+
+    oled_write_string_scaled_centered(SPLASH_LINE1, start_y, SPLASH_SCALE);
+    oled_write_string_scaled_centered(SPLASH_LINE2, start_y + line_height + gap_height, SPLASH_SCALE);
+}
+
+// Draws the current long-press confirmation message, centered on one line.
+static void render_message(void) {
+    const char *text;
+
+    switch (oled_message) {
+        case MSG_SCREEN_OFF:
+            text = "Screen Off";
+            break;
+        case MSG_SCREEN_ON:
+            text = "Screen On";
+            break;
+        default:
+            return;
+    }
+
+    uint8_t scale = oled_fitting_scale(strlen(text));
+    uint8_t y0    = (OLED_DISPLAY_HEIGHT > OLED_FONT_HEIGHT * scale) ? (OLED_DISPLAY_HEIGHT - OLED_FONT_HEIGHT * scale) / 2 : 0;
+
+    oled_write_string_scaled_centered(text, y0, scale);
+}
+
+// The idle screen: current layer name, large and centered at the top.
+static void render_main_info(void) {
     // Only clear when the layer actually changes. OLED_UPDATE_PROCESS_LIMIT
     // defaults to 1 block per frame, so clearing every frame (marking the
     // whole buffer dirty each time) starves the flush and only the first
@@ -579,9 +649,9 @@ void render_main_info(void) {
     // oled_write(wpm_string, false);
 }
 
-// This function renders the last pressed key: its name (large) above its raw
-// code (normal size), both centered on the screen as a block.
-void render_key_info(void) {
+// The last pressed key: its name (large) above its raw code (normal size),
+// both centered on the screen as a block.
+static void render_key_info(void) {
     // Only clear when the key actually changes (see render_main_info for why).
     static char last_rendered_key[sizeof(last_key_pressed)] = "";
     if (strcmp(last_key_pressed, last_rendered_key) != 0) {
@@ -589,11 +659,7 @@ void render_key_info(void) {
         oled_clear();
     }
 
-    // Drop to 1x if the name is too long to fit the screen at 2x width.
-    uint8_t name_scale = 2;
-    if (strlen(last_key_pressed) * OLED_FONT_WIDTH * name_scale > OLED_DISPLAY_WIDTH) {
-        name_scale = 1;
-    }
+    uint8_t       name_scale = oled_fitting_scale(strlen(last_key_pressed));
     const uint8_t name_rows  = name_scale; // scaled name height, in OLED_FONT_HEIGHT-tall row units
     const uint8_t code_rows  = 1;
     const uint8_t total_rows = name_rows + code_rows;
@@ -611,30 +677,15 @@ void render_key_info(void) {
     oled_write(last_key_code, false);
 }
 
-// Which of the three screens is currently being shown. Used so we can clear
-// once whenever we *switch* screens, even if the content on the new screen
-// happens to be identical to what it showed last time it was up (e.g.
-// returning to the same layer name after a keypress) -- render_main_info()
-// and render_key_info() only clear on their own when their own content
-// changes, which isn't enough on its own to wipe leftovers from a *different*
-// screen that was showing a moment ago.
-typedef enum {
-    OLED_SCREEN_NONE,
-    OLED_SCREEN_MSG,
-    OLED_SCREEN_ANIM,
-    OLED_SCREEN_SPLASH,
-    OLED_SCREEN_LAYER,
-    OLED_SCREEN_KEY,
-} oled_screen_t;
-
+// Picks which screen to show. Each branch clears once on entry so leftovers
+// from the previous screen don't survive.
 bool oled_task_user(void) {
-    static oled_screen_t last_screen = OLED_SCREEN_NONE;
+    static oled_screen_t last_screen      = OLED_SCREEN_NONE;
+    static bool          was_user_enabled = true;
 
     // User has held the toggle key to turn the screen off. QMK re-wakes the
     // OLED on any key activity, so keep asserting the off state here rather
     // than switching it off once.
-    static bool was_user_enabled = true;
-
     if (!oled_user_enabled) {
         oled_off();
         was_user_enabled = false;
@@ -661,7 +712,6 @@ bool oled_task_user(void) {
         return true;
     }
 
-    // The conditional logic to choose what to display.
     // Use the 32-bit timer here: timer_read() is 16-bit and wraps every ~65.5s,
     // which would make the boot sequence reappear every time it wrapped.
     uint32_t boot_elapsed = timer_elapsed32(boot_timer);
@@ -699,4 +749,4 @@ bool oled_task_user(void) {
     return true;
 }
 
-#endif
+#endif // OLED_ENABLE

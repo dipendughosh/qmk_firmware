@@ -1,33 +1,19 @@
+// Minimal baseline keymap for the MacroPad24.
+//
+// Layers only -- the shortcut keys use QMK's built-in modifier wrapping
+// (e.g. LCTL(KC_C) for Ctrl+C), so no custom keycodes or process_record_user
+// are needed here.
+//
+// See the MacroPad_v1_24_2040 keymap for the full featured version with the
+// OLED boot animation, per-key display and long-press actions.
+
 #include QMK_KEYBOARD_H
-#include <stdio.h> // Include this for sprintf to work correctly
-#include "oled_driver.h"
 
 enum layers {
-  _FUNCTION,
-  _SPECIAL_FUNCTION,
-  _NUMPAD,
-  _MACROS
-};
-
-// Define custom keycodes for your macros. This is the modern, flexible way.
-enum custom_keycodes {
-    MAC_CPY = SAFE_RANGE,
-    MAC_CUT,
-    MAC_PST,
-    MAC_UNDO,
-    MAC_REDO,
-    MAC_SAVE,
-    MAC_SELALL,
-    MAC_FIND,
-    MAC_CLOSE,
-    MAC_NEWTAB,
-    MAC_NEWWIN,
-    MAC_REL,
-    MAC_TABS,
-    MAC_WIN,
-    MAC_TABSFT,
-    MAC_TASKMG,
-    MAC_TASKMG2
+    _FUNCTION,
+    _SPECIAL_FUNCTION,
+    _NUMPAD,
+    _MACROS
 };
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -49,201 +35,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_P7, KC_P8, KC_P9, KC_PAST, KC_TRNS, KC_TRNS,
         KC_P0, KC_PDOT, KC_PSLS, KC_NUM, KC_TRNS, TG(3)
     ),
+    //        Copy          Cut           Paste         Undo
+    //        Redo          Save          Select All    Find
+    //        Close         New Tab       New Window    Reload
+    //        Cycle Tabs    Cycle Windows Tab Shift     Task Mgr      Task Mgr 2
     [_MACROS] = LAYOUT_grid(
-        MAC_CPY, MAC_CUT, MAC_PST, MAC_UNDO, KC_TRNS, KC_TRNS,
-        MAC_REDO, MAC_SAVE, MAC_SELALL, MAC_FIND, KC_TRNS, KC_TRNS,
-        MAC_CLOSE, MAC_NEWTAB, MAC_NEWWIN, MAC_REL, KC_TRNS, KC_TRNS,
-        MAC_TABS, MAC_WIN, MAC_TABSFT, MAC_TASKMG, MAC_TASKMG2, TO(0))
+        LCTL(KC_C),   LCTL(KC_X),   LCTL(KC_V),   LCTL(KC_Z),   KC_TRNS,              KC_TRNS,
+        LCTL(KC_Y),   LCTL(KC_S),   LCTL(KC_A),   LCTL(KC_F),   KC_TRNS,              KC_TRNS,
+        LCTL(KC_W),   LCTL(KC_T),   LCTL(KC_N),   LCTL(KC_R),   KC_TRNS,              KC_TRNS,
+        LCTL(KC_TAB), LALT(KC_TAB), LSFT(KC_TAB), LCTL(LALT(KC_DEL)), LCTL(LSFT(KC_ESC)), TO(0)
+    )
 };
-
-#ifdef OLED_ENABLE
-
-// A variable to store the name of the last key pressed
-char last_key_pressed[20] = "";
-
-// A timer to track when the keyboard is idle
-static uint32_t oled_timer = 0;
-
-// This function runs when a key is pressed or released
-bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    if (record->event.pressed) {
-        // Reset the timer on every key press
-        oled_timer = timer_read();
-
-        // Check if the keycode is a standard key or a custom macro
-        if (keycode >= SAFE_RANGE) {
-            // For custom keycodes, display a special message
-            switch (keycode) {
-                case MAC_CPY:
-                    sprintf(last_key_pressed, "Copy");
-                    break;
-                case MAC_CUT:
-                    sprintf(last_key_pressed, "Cut");
-                    break;
-                case MAC_PST:
-                    sprintf(last_key_pressed, "Paste");
-                    break;
-                case MAC_UNDO:
-                    sprintf(last_key_pressed, "Undo");
-                    break;
-                case MAC_REDO:
-                    sprintf(last_key_pressed, "Redo");
-                    break;
-                case MAC_SAVE:
-                    sprintf(last_key_pressed, "Save");
-                    break;
-                case MAC_SELALL:
-                    sprintf(last_key_pressed, "Select All");
-                    break;
-                case MAC_FIND:
-                    sprintf(last_key_pressed, "Find");
-                    break;
-                case MAC_CLOSE:
-                    sprintf(last_key_pressed, "Close");
-                    break;
-                case MAC_NEWTAB:
-                    sprintf(last_key_pressed, "New Tab");
-                    break;
-                case MAC_NEWWIN:
-                    sprintf(last_key_pressed, "New Window");
-                    break;
-                case MAC_REL:
-                    sprintf(last_key_pressed, "Reload");
-                    break;
-                case MAC_TABS:
-                    sprintf(last_key_pressed, "Cycle Tabs");
-                    break;
-                case MAC_WIN:
-                    sprintf(last_key_pressed, "Cycle Windows");
-                    break;
-                case MAC_TABSFT:
-                    sprintf(last_key_pressed, "Tab Shift");
-                    break;
-                case MAC_TASKMG:
-                    sprintf(last_key_pressed, "Task Manager");
-                    break;
-                case MAC_TASKMG2:
-                    sprintf(last_key_pressed, "Task Manager");
-                    break;
-                default:
-                    sprintf(last_key_pressed, "Macro");
-                    break;
-            }
-        } else {
-            // For standard keys, display the keycode number (useful for debugging)
-            sprintf(last_key_pressed, "0x%02X", keycode);
-        }
-
-        switch (keycode) {
-            case MAC_CPY:
-                tap_code16(LCTL(KC_C));
-                return false;
-            case MAC_CUT:
-                tap_code16(LCTL(KC_X));
-                return false;
-            case MAC_PST:
-                tap_code16(LCTL(KC_V));
-                return false;
-            case MAC_UNDO:
-                tap_code16(LCTL(KC_Z));
-                return false;
-            case MAC_REDO:
-                tap_code16(LCTL(KC_Y));
-                return false;
-            case MAC_SAVE:
-                tap_code16(LCTL(KC_S));
-                return false;
-            case MAC_SELALL:
-                tap_code16(LCTL(KC_A));
-                return false;
-            case MAC_FIND:
-                tap_code16(LCTL(KC_F));
-                return false;
-            case MAC_CLOSE:
-                tap_code16(LCTL(KC_W));
-                return false;
-            case MAC_NEWTAB:
-                tap_code16(LCTL(KC_T));
-                return false;
-            case MAC_NEWWIN:
-                tap_code16(LCTL(KC_N));
-                return false;
-            case MAC_REL:
-                tap_code16(LCTL(KC_R));
-                return false;
-            case MAC_TABS:
-                tap_code16(LCTL(KC_TAB));
-                return false;
-            case MAC_WIN:
-                tap_code16(LALT(KC_TAB));
-                return false;
-            case MAC_TABSFT:
-                tap_code16(LSFT(KC_TAB));
-                return false;
-            case MAC_TASKMG:
-                tap_code16(LCTL(LALT(KC_DEL)));
-                return false;
-            case MAC_TASKMG2:
-                tap_code16(LCTL(LSFT(KC_ESC)));
-                return false;
-        }
-    }
-    return true;
-}
-
-// This function renders the layer and WPM info
-void render_main_info(void) {
-    oled_set_cursor(0, 0);
-    // oled_clear();
-
-    // Display current layer
-    oled_write_P(PSTR("Layer: "), false);
-    switch (get_highest_layer(layer_state)) {
-        case _FUNCTION:
-            oled_write_P(PSTR("FUNCTION"), false);
-            break;
-        case _SPECIAL_FUNCTION:
-            oled_write_P(PSTR("SPECIAL"), false);
-            break;
-        case _NUMPAD:
-            oled_write_P(PSTR("NUMPAD"), false);
-            break;
-        case _MACROS:
-            oled_write_P(PSTR("MACROS"), false);
-            break;
-        default:
-            oled_write_P(PSTR("Undefined!!!!"), false);
-            break;
-    }
-    oled_write_P(PSTR("               "), false);
-
-    // Display WPM
-    oled_set_cursor(0, 2);
-    char wpm_string[10];
-    sprintf(wpm_string, "WPM: %u", get_current_wpm());
-    oled_write(wpm_string, false);
-}
-
-// This function renders the last pressed key info
-void render_key_info(void) {
-    oled_set_cursor(0, 0);
-
-    oled_write_P(PSTR("Pressed: "), false);
-    oled_write(last_key_pressed, false);
-    oled_write_P(PSTR("               "), false);
-}
-
-bool oled_task_user(void) {
-    // The conditional logic to choose what to display
-    if (timer_elapsed(oled_timer) > 1500) { // 1.5 second timeout
-        // If idle, show layer and WPM
-        render_main_info();
-    } else {
-        // If typing, show the last key pressed
-        render_key_info();
-    }
-
-    return true;
-}
-
-#endif
