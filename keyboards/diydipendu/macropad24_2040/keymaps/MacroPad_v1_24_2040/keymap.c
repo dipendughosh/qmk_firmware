@@ -147,6 +147,17 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 // How long "Screen Off"/"Screen On" stays up before the toggle takes effect.
 #define SCREEN_MSG_MS 500
 
+/* --- Layout spacing -------------------------------------------------------
+ * Vertical gaps in pixels. The font is OLED_FONT_HEIGHT (8px) tall, so these
+ * are fractions of a text line rather than whole rows.
+ */
+
+// Between the "Starting"/"Reseting" label and the loading bar.
+#define BOOT_LABEL_GAP 10
+
+// Between a key's name and its raw keycode.
+#define KEY_INFO_GAP 8
+
 /* -------------------------------------------------------------------------
  * 4. State
  * ---------------------------------------------------------------------- */
@@ -538,7 +549,7 @@ static void oled_draw_rect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool fill
 static void render_boot_animation(uint32_t elapsed) {
     const uint8_t bar_width  = 100;
     const uint8_t bar_height = 12;
-    const uint8_t gap        = 6;
+    const uint8_t gap        = BOOT_LABEL_GAP;
 
     const char *label   = boot_from_reset ? RESET_MSG_TEXT : BOOT_MSG_TEXT;
     uint8_t     max_len = strlen(label) + BOOT_MSG_DOTS;
@@ -668,22 +679,19 @@ static void render_key_info(void) {
         oled_clear();
     }
 
-    uint8_t       name_scale = oled_fitting_scale(strlen(last_key_pressed));
-    const uint8_t name_rows  = name_scale; // scaled name height, in OLED_FONT_HEIGHT-tall row units
-    const uint8_t code_rows  = 1;
-    const uint8_t total_rows = name_rows + code_rows;
-
-    uint8_t max_chars = oled_max_chars();
-    uint8_t max_lines = oled_max_lines();
-    uint8_t start_row = (max_lines > total_rows) ? (max_lines - total_rows) / 2 : 0;
+    // Both lines are positioned by pixel rather than by character row, so the
+    // gap between them can be finer than a whole 8px line.
+    uint8_t name_scale = oled_fitting_scale(strlen(last_key_pressed));
+    uint8_t name_h     = OLED_FONT_HEIGHT * name_scale;
+    uint8_t code_h     = OLED_FONT_HEIGHT; // the code is always 1x
+    uint8_t block_h    = name_h + KEY_INFO_GAP + code_h;
+    uint8_t start_y    = (OLED_DISPLAY_HEIGHT > block_h) ? (OLED_DISPLAY_HEIGHT - block_h) / 2 : 0;
 
     // Line 1: key name, larger font, centered
-    oled_write_string_scaled_centered(last_key_pressed, start_row * OLED_FONT_HEIGHT, name_scale);
+    oled_write_string_scaled_centered(last_key_pressed, start_y, name_scale);
 
     // Line 2: raw keycode, normal (smaller) font, centered
-    uint8_t code_len = strlen(last_key_code);
-    oled_set_cursor((max_chars - code_len) / 2, start_row + name_rows);
-    oled_write(last_key_code, false);
+    oled_write_string_scaled_centered(last_key_code, start_y + name_h + KEY_INFO_GAP, 1);
 }
 
 // Picks which screen to show. Each branch clears once on entry so leftovers
