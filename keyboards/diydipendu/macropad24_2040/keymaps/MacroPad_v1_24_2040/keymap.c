@@ -74,6 +74,7 @@ typedef enum {
     OLED_SCREEN_SPLASH,
     OLED_SCREEN_LAYER,
     OLED_SCREEN_KEY,
+    OLED_SCREEN_RAIN,
 } oled_screen_t;
 
 /* -------------------------------------------------------------------------
@@ -155,6 +156,24 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 // How long "Screen Off"/"Screen On" stays up before the toggle takes effect.
 #define SCREEN_MSG_MS 500
 
+/* --- Idle screensaver -----------------------------------------------------
+ * The driver's own blanking is off (OLED_TIMEOUT 0 in config.h). Instead, after
+ * SCREENSAVER_START_MS of no key activity the Matrix rain plays for one more
+ * full cycle, then the panel sleeps. Any keypress returns to normal.
+ */
+// Raise SCREENSAVER_START_MS if you want the layer name to stay readable for
+// longer; lower it to be kinder to the panel, since the layer name is static
+// text at a fixed position and the rain is not.
+#define SCREENSAVER_START_MS 30000
+#define RAIN_DURATION_MS 30000
+
+// How long each row of the rain takes to fall one step.
+#define RAIN_STEP_MS 110
+
+// Trail length in characters, picked at random per column within this range.
+#define RAIN_TRAIL_MIN 3
+#define RAIN_TRAIL_MAX 7
+
 /* --- Layout spacing -------------------------------------------------------
  * Vertical gaps in pixels. The font is OLED_FONT_HEIGHT (8px) tall, so these
  * are fractions of a text line rather than whole rows.
@@ -208,6 +227,9 @@ static uint8_t keys_held = 0;
 // Name and raw code of the last key pressed, for the OLED to show.
 static char last_key_pressed[20] = "";
 static char last_key_code[8]     = "";
+
+// When the last key event happened, which drives the screensaver and sleep.
+static uint32_t last_activity_timer = 0;
 
 /* -------------------------------------------------------------------------
  * 5. Key handling
@@ -426,6 +448,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     } else if (keys_held > 0) {
         keys_held--;
     }
+
+    // Any key event counts as activity, which dismisses the screensaver and
+    // wakes the panel if it had gone to sleep.
+    last_activity_timer = timer_read32();
 
     // The OLED toggle key: show its name on press like any other key, but hold
     // the action back so a long hold can toggle the screen without also firing
@@ -716,15 +742,111 @@ static void render_key_info(void) {
     oled_write_string_scaled_centered(last_key_code, start_y + name_h + KEY_INFO_GAP, 1);
 }
 
+/* --- Matrix rain screensaver ----------------------------------------------
+ * Columns of characters falling down the screen. Each column keeps its own
+ * head position, trail length and fall rate so they don't move in lockstep.
+ * The panel is 1-bit, so the fade-out of a real Matrix trail is faked by
+ * thinning the tail out towards its end.
+ */
+
+#define RAIN_COLS (OLED_DISPLAY_WIDTH / OLED_FONT_WIDTH)
+#define RAIN_ROWS (OLED_DISPLAY_HEIGHT / OLED_FONT_HEIGHT)
+
+static int8_t  rain_head[RAIN_COLS]; // row of the leading character, may be negative
+static uint8_t rain_len[RAIN_COLS];  // trail length in characters
+static uint8_t rain_rate[RAIN_COLS]; // advance one row every N steps
+static uint8_t rain_tick[RAIN_COLS]; // steps since this column last advanced
+
+// 16-bit xorshift. A local generator keeps the effect self-contained and
+// avoids pulling rand() in from libc.
+static uint16_t rain_rng = 0xACE1u;
+
+static uint16_t rain_rand(void) {
+    rain_rng ^= rain_rng << 7;
+    rain_rng ^= rain_rng >> 9;
+    rain_rng ^= rain_rng << 8;
+    return rain_rng;
+}
+
+// Character shown at a cell. Hashing the position keeps a cell's glyph stable
+// as the trail passes over it; the head is salted with the step so it flickers.
+static char rain_glyph(uint8_t col, int8_t row, uint16_t salt) {
+    static const char charset[] = "0123456789ABCDEFXYZ<>*+=-/\\|:;";
+
+    uint16_t h = (uint16_t)col * 31u + (uint16_t)(uint8_t)row * 131u + salt * 7919u;
+    h ^= h >> 5;
+    h *= 0x2545u;
+    h ^= h >> 7;
+    return charset[h % (sizeof(charset) - 1)];
+}
+
+// Restart a column above the top of the screen with fresh random properties.
+static void rain_respawn(uint8_t col) {
+    rain_head[col] = -(int8_t)(rain_rand() % RAIN_ROWS);
+    rain_len[col]  = RAIN_TRAIL_MIN + (rain_rand() % (RAIN_TRAIL_MAX - RAIN_TRAIL_MIN + 1));
+    rain_rate[col] = 1 + (rain_rand() % 3);
+    rain_tick[col] = 0;
+}
+
+static void rain_init(void) {
+    for (uint8_t c = 0; c < RAIN_COLS; c++) {
+        rain_respawn(c);
+        // Stagger the initial heads so the screen doesn't start off empty.
+        rain_head[c] -= rain_rand() % RAIN_ROWS;
+    }
+}
+
+static void render_matrix_rain(void) {
+    static uint32_t step_timer = 0;
+    static uint16_t step       = 0;
+
+    // Only touch the buffer when the animation actually advances. Redrawing
+    // every frame would re-dirty all 32 blocks faster than the driver can
+    // flush them (OLED_UPDATE_PROCESS_LIMIT is 1 block per frame).
+    if (timer_elapsed32(step_timer) < RAIN_STEP_MS) {
+        return;
+    }
+    step_timer = timer_read32();
+    step++;
+
+    oled_clear();
+
+    for (uint8_t c = 0; c < RAIN_COLS; c++) {
+        if (++rain_tick[c] >= rain_rate[c]) {
+            rain_tick[c] = 0;
+            rain_head[c]++;
+            if (rain_head[c] - (int8_t)rain_len[c] > RAIN_ROWS) {
+                rain_respawn(c);
+            }
+        }
+
+        for (uint8_t i = 0; i < rain_len[c]; i++) {
+            int8_t row = rain_head[c] - (int8_t)i;
+            if (row < 0 || row >= RAIN_ROWS) {
+                continue;
+            }
+
+            // Thin out the last third of the trail so it appears to fade.
+            if (i > (rain_len[c] * 2) / 3 && (rain_glyph(c, row, 1) & 1)) {
+                continue;
+            }
+
+            char ch = rain_glyph(c, row, (i == 0) ? step : 0);
+            oled_write_char_scaled(c * OLED_FONT_WIDTH, (uint8_t)row * OLED_FONT_HEIGHT, ch, 1);
+        }
+    }
+}
+
 // Picks which screen to show. Each branch clears once on entry so leftovers
 // from the previous screen don't survive.
 bool oled_task_user(void) {
     static oled_screen_t last_screen      = OLED_SCREEN_NONE;
     static bool          was_user_enabled = true;
+    static bool          was_asleep       = false;
 
-    // User has held the toggle key to turn the screen off. QMK re-wakes the
-    // OLED on any key activity, so keep asserting the off state here rather
-    // than switching it off once.
+    // User has held the toggle key to turn the screen off. Keep asserting the
+    // off state here rather than switching it off once, because any dirty
+    // buffer makes the driver switch the panel back on.
     if (!oled_user_enabled) {
         oled_off();
         was_user_enabled = false;
@@ -734,9 +856,24 @@ bool oled_task_user(void) {
     }
 
     if (!was_user_enabled) {
-        // Just switched back on. Wake it once here; after this, leave the
-        // display alone so the normal OLED_TIMEOUT sleep still works.
         was_user_enabled = true;
+        oled_on();
+    }
+
+    // Idle handling is ours to do: OLED_TIMEOUT is 0, so the driver neither
+    // blanks the panel nor wakes it on keypress.
+    uint32_t idle = timer_elapsed32(last_activity_timer);
+
+    if (idle >= SCREENSAVER_START_MS + RAIN_DURATION_MS) {
+        // The screensaver has had its cycle; sleep for real.
+        oled_off();
+        was_asleep  = true;
+        last_screen = OLED_SCREEN_NONE;
+        return false;
+    }
+
+    if (was_asleep) {
+        was_asleep = false;
         oled_on();
     }
 
@@ -769,6 +906,14 @@ bool oled_task_user(void) {
             oled_clear();
         }
         render_splash();
+    } else if (idle >= SCREENSAVER_START_MS) {
+        // Idle long enough: run the screensaver until it's time to sleep
+        if (last_screen != OLED_SCREEN_RAIN) {
+            last_screen = OLED_SCREEN_RAIN;
+            rain_init();
+            oled_clear();
+        }
+        render_matrix_rain();
     } else if (keys_held == 0) {
         // Nothing held: show the layer name
         if (last_screen != OLED_SCREEN_LAYER) {

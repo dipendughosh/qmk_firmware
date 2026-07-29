@@ -111,8 +111,29 @@ On connect (and on soft reset) the OLED plays a short sequence:
    - Idle: the current layer name, large and centered.
    - While a key is held: the key's name with its raw keycode underneath.
 
-The screen sleeps after `OLED_TIMEOUT` (60s) of inactivity and wakes on the
-next keypress.
+## Idle screensaver
+
+Left alone, the display works through three stages:
+
+| Idle time  | What is shown                                |
+| ---------- | -------------------------------------------- |
+| 0 - 30s    | Normal operation (layer name)                |
+| 30s - 60s  | Matrix rain -- columns of characters falling |
+| 60s onward | Panel off                                    |
+
+Any keypress at any point returns straight to normal operation and wakes the
+panel if it had slept.
+
+The rain gives each of the 21 columns its own head position, trail length
+(`RAIN_TRAIL_MIN`..`RAIN_TRAIL_MAX`) and fall rate, so the columns do not move
+in lockstep. Because the panel is 1-bit there is no brightness gradient to fade
+the trail with, so the tail is thinned out towards its end instead. Fall speed
+is `RAIN_STEP_MS` per row.
+
+Note that `OLED_TIMEOUT` is set to `0` in `config.h`: the driver's own idle
+blanking is disabled so the screensaver can run first. That also stops QMK
+waking the panel on keypress, so the keymap drives `oled_on()`/`oled_off()`
+itself.
 
 ## RGB
 
