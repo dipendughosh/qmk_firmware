@@ -132,10 +132,18 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 #define SPLASH_DURATION_MS 2000
 
 // Label above the loading bar, wording depending on whether the boot sequence
-// came from a power-on or a soft reset.
-#define BOOT_MSG_TEXT "Starting"
-#define RESET_MSG_TEXT "Reseting"
+// came from a power-on or a soft reset. Kept uppercase on purpose: the 6x8
+// font has no room for descenders, so a lowercase "g" renders with its tail
+// clipped (see lib/glcdfont.c -- only "y" uses the bottom pixel row).
+#define BOOT_MSG_TEXT "STARTING"
+#define RESET_MSG_TEXT "RESETTING"
 #define BOOT_MSG_DOTS 5
+
+// The label types itself out one letter at a time at this rate, then the dots
+// are paced across whatever is left of ANIM_DURATION_MS. Keep this brisk: the
+// whole screen only lasts 1.5s, so a slow reveal would leave the finished word
+// on screen for barely a moment. Set to 0 to show the label immediately.
+#define BOOT_LETTER_MS 50
 
 // Splash text. Both lines are drawn at SPLASH_SCALE with a blank line between.
 #define SPLASH_LINE1 "MacroPad"
@@ -558,17 +566,31 @@ static void render_boot_animation(uint32_t elapsed) {
     uint8_t     block_h = label_h + gap + bar_height;
     uint8_t     label_y = (OLED_DISPLAY_HEIGHT > block_h) ? (OLED_DISPLAY_HEIGHT - block_h) / 2 : 0;
 
-    // One dot per slice of the animation, so text and bar finish together.
-    uint8_t dots = elapsed / (ANIM_DURATION_MS / (BOOT_MSG_DOTS + 1));
-    if (dots > BOOT_MSG_DOTS) {
-        dots = BOOT_MSG_DOTS;
+    // Type the label out first, then pace the dots across the time that's left
+    // so the last dot lands as the bar fills.
+    uint8_t  label_len = strlen(label);
+    uint32_t typed_ms  = (uint32_t)label_len * BOOT_LETTER_MS;
+
+    uint8_t shown = (BOOT_LETTER_MS > 0) ? elapsed / BOOT_LETTER_MS : label_len;
+    if (shown > label_len) {
+        shown = label_len;
+    }
+
+    uint8_t dots = 0;
+    if (elapsed >= typed_ms && ANIM_DURATION_MS > typed_ms) {
+        uint32_t dot_ms = (ANIM_DURATION_MS - typed_ms) / (BOOT_MSG_DOTS + 1);
+        if (dot_ms > 0) {
+            dots = (elapsed - typed_ms) / dot_ms;
+            if (dots > BOOT_MSG_DOTS) {
+                dots = BOOT_MSG_DOTS;
+            }
+        }
     }
 
     char    buf[24];
     uint8_t len = 0;
-    while (label[len] != '\0' && len < sizeof(buf) - 1) {
-        buf[len] = label[len];
-        len++;
+    for (uint8_t i = 0; i < shown && len < sizeof(buf) - 1; i++) {
+        buf[len++] = label[i];
     }
     for (uint8_t i = 0; i < dots && len < sizeof(buf) - 1; i++) {
         buf[len++] = '.';

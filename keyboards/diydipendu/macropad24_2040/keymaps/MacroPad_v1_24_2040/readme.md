@@ -100,8 +100,12 @@ MCU or enter the bootloader.
 
 On connect (and on soft reset) the OLED plays a short sequence:
 
-1. **Boot animation**, 1.5s: a loading bar with a `Starting...` label, or
-   `Reseting...` when triggered by the long-press reset.
+1. **Boot animation**, 1.5s: a loading bar with a `STARTING...` label, or
+   `RESETTING...` when triggered by the long-press reset. The label types
+   itself out a letter at a time (`BOOT_LETTER_MS`, 50ms each) and finishes
+   after ~0.4s, then the dots are paced across the remaining time so the last
+   one lands as the bar fills. The words are uppercase because the 6x8 font has
+   no room for descenders -- a lowercase `g` renders with its tail clipped.
 2. **Splash**, 2s: `MacroPad` over `DiGhosh`.
 3. **Normal operation**:
    - Idle: the current layer name, large and centered.
