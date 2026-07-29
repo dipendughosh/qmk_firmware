@@ -5,15 +5,83 @@ the OLED display, RGB cycling and two long-press actions.
 
 ## Layers
 
-| # | Layer               | Contents                                          |
-| - | ------------------- | ------------------------------------------------- |
-| 0 | `_FUNCTION`         | F1-F12, Ins/Del, Home/End, PgUp/PgDn, arrows      |
-| 1 | `_SPECIAL_FUNCTION` | F13-F24                                           |
-| 2 | `_NUMPAD`           | Numpad digits and operators                       |
-| 3 | `_MACROS`           | Copy/cut/paste, undo/redo, tab and window control |
+Four layers, cycled with the bottom-right key. The pad is a 6x4 grid; the
+tables below are laid out the same way you see it.
 
-The bottom-right key steps through the layers with `TG(1)` -> `TG(2)` ->
-`TG(3)`, then `TO(0)` to return to the base layer.
+| # | Layer               | Purpose                                    |
+| - | ------------------- | ------------------------------------------ |
+| 0 | `_FUNCTION`         | Function keys and navigation (base layer)  |
+| 1 | `_SPECIAL_FUNCTION` | Extended function keys F13-F24             |
+| 2 | `_NUMPAD`           | Number pad                                 |
+| 3 | `_MACROS`           | Editing and window shortcuts               |
+
+Entries in (brackets) are inherited from a lower layer, so they do the same
+thing on every layer.
+
+### Layer 0 - Function
+
+| 1          | 2           | 3        | 4          | 5         | 6            |
+| ---------- | ----------- | -------- | ---------- | --------- | ------------ |
+| F1         | F2          | F3       | F4         | Insert    | Delete       |
+| F5         | F6          | F7       | F8         | Home      | End          |
+| F9         | F10         | F11      | F12        | Page Up   | Page Down    |
+| Arrow Left | Arrow Right | Arrow Up | Arrow Down | Escape    | **-> Layer 1** |
+
+### Layer 1 - Special Function
+
+| 1          | 2           | 3        | 4          | 5         | 6            |
+| ---------- | ----------- | -------- | ---------- | --------- | ------------ |
+| F13        | F14         | F15      | F16        | (Insert)  | (Delete)     |
+| F17        | F18         | F19      | F20        | (Home)    | (End)        |
+| F21        | F22         | F23      | F24        | (Page Up) | (Page Down)  |
+| (Arrow Left) | (Arrow Right) | (Arrow Up) | (Arrow Down) | (Escape) | **-> Layer 2** |
+
+### Layer 2 - Numpad
+
+| 1     | 2       | 3       | 4        | 5         | 6            |
+| ----- | ------- | ------- | -------- | --------- | ------------ |
+| Num 1 | Num 2   | Num 3   | Num +    | (Insert)  | (Delete)     |
+| Num 4 | Num 5   | Num 6   | Num -    | (Home)    | (End)        |
+| Num 7 | Num 8   | Num 9   | Num *    | (Page Up) | (Page Down)  |
+| Num 0 | Num .   | Num /   | Num Lock | (Escape)  | **-> Layer 3** |
+
+### Layer 3 - Macros
+
+Grouped by row: clipboard, editing, windows, then tabs and system.
+
+| 1          | 2             | 3            | 4        | 5            | 6              |
+| ---------- | ------------- | ------------ | -------- | ------------ | -------------- |
+| Select All | Copy          | Cut          | Paste    | (Insert)     | (Delete)       |
+| Find       | Redo          | Undo         | Save     | (Home)       | (End)          |
+| New Window | Switch Window | Close Window | Reload   | (Page Up)    | (Page Down)    |
+| New Tab    | Next Tab      | Prev Tab     | Security | Task Manager | **-> Layer 0** |
+
+The shortcut each one sends:
+
+| Key           | Sends      | Key          | Sends              |
+| ------------- | ---------- | ------------ | ------------------ |
+| Select All    | `Ctrl+A`   | New Window   | `Ctrl+N`           |
+| Copy          | `Ctrl+C`   | Switch Window| `Alt+Tab`          |
+| Cut           | `Ctrl+X`   | Close Window | `Ctrl+W`           |
+| Paste         | `Ctrl+V`   | Reload       | `Ctrl+R`           |
+| Find          | `Ctrl+F`   | New Tab      | `Ctrl+T`           |
+| Redo          | `Ctrl+Y`   | Next Tab     | `Ctrl+Tab`         |
+| Undo          | `Ctrl+Z`   | Prev Tab     | `Ctrl+Shift+Tab`   |
+| Save          | `Ctrl+S`   | Security     | `Ctrl+Alt+Del`     |
+|               |            | Task Manager | `Ctrl+Shift+Esc`   |
+
+**Security** is `Ctrl+Alt+Del` -- it opens the Windows security screen (Lock,
+Switch user, Sign out, Task Manager). The key beside it skips that menu and
+goes straight to Task Manager.
+
+### Cycling layers
+
+The bottom-right key advances one layer per press and wraps back to the base
+layer from the last one:
+
+    Layer 0 --> Layer 1 --> Layer 2 --> Layer 3 --> back to Layer 0
+
+The current layer name is shown on the OLED whenever no key is held.
 
 ## Long-press actions
 

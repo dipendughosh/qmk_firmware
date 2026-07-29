@@ -35,14 +35,14 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_P7, KC_P8, KC_P9, KC_PAST, KC_TRNS, KC_TRNS,
         KC_P0, KC_PDOT, KC_PSLS, KC_NUM, KC_TRNS, TG(3)
     ),
-    //        Copy          Cut           Paste         Undo
-    //        Redo          Save          Select All    Find
-    //        Close         New Tab       New Window    Reload
-    //        Cycle Tabs    Cycle Windows Tab Shift     Task Mgr      Task Mgr 2
+    //        Select All    Copy          Cut           Paste
+    //        Find          Redo          Undo          Save
+    //        New Window    Switch Window Close Window  Reload
+    //        New Tab       Next Tab      Prev Tab      Security      Task Mgr
     [_MACROS] = LAYOUT_grid(
-        LCTL(KC_C),   LCTL(KC_X),   LCTL(KC_V),   LCTL(KC_Z),   KC_TRNS,              KC_TRNS,
-        LCTL(KC_Y),   LCTL(KC_S),   LCTL(KC_A),   LCTL(KC_F),   KC_TRNS,              KC_TRNS,
-        LCTL(KC_W),   LCTL(KC_T),   LCTL(KC_N),   LCTL(KC_R),   KC_TRNS,              KC_TRNS,
-        LCTL(KC_TAB), LALT(KC_TAB), LSFT(KC_TAB), LCTL(LALT(KC_DEL)), LCTL(LSFT(KC_ESC)), TO(0)
+        LCTL(KC_A),   LCTL(KC_C),   LCTL(KC_X),         LCTL(KC_V),         KC_TRNS,            KC_TRNS,
+        LCTL(KC_F),   LCTL(KC_Y),   LCTL(KC_Z),         LCTL(KC_S),         KC_TRNS,            KC_TRNS,
+        LCTL(KC_N),   LALT(KC_TAB), LCTL(KC_W),         LCTL(KC_R),         KC_TRNS,            KC_TRNS,
+        LCTL(KC_T),   LCTL(KC_TAB), LCTL(LSFT(KC_TAB)), LCTL(LALT(KC_DEL)), LCTL(LSFT(KC_ESC)), TO(0)
     )
 };

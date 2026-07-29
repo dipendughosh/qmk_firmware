@@ -28,24 +28,29 @@ enum layers {
 };
 
 // Define custom keycodes for your macros. This is the modern, flexible way.
+// Listed in the same order they appear on the _MACROS layer.
 enum custom_keycodes {
-    MAC_CPY = SAFE_RANGE,
+    // Row 1 - clipboard
+    MAC_SELALL = SAFE_RANGE,
+    MAC_CPY,
     MAC_CUT,
     MAC_PST,
-    MAC_UNDO,
-    MAC_REDO,
-    MAC_SAVE,
-    MAC_SELALL,
+    // Row 2 - editing
     MAC_FIND,
-    MAC_CLOSE,
-    MAC_NEWTAB,
+    MAC_REDO,
+    MAC_UNDO,
+    MAC_SAVE,
+    // Row 3 - windows
     MAC_NEWWIN,
-    MAC_REL,
-    MAC_TABS,
     MAC_WIN,
-    MAC_TABSFT,
-    MAC_TASKMG,
-    MAC_TASKMG2
+    MAC_CLOSE,
+    MAC_REL,
+    // Row 4 - tabs and system
+    MAC_NEWTAB,
+    MAC_TABS,
+    MAC_PRVTAB,
+    MAC_SECURE,
+    MAC_TASKMG
 };
 
 // Short-lived confirmation screens shown before a long-press action takes
@@ -95,10 +100,10 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_P0, KC_PDOT, KC_PSLS, KC_NUM, KC_TRNS, TG(3)
     ),
     [_MACROS] = LAYOUT_grid(
-        MAC_CPY, MAC_CUT, MAC_PST, MAC_UNDO, KC_TRNS, KC_TRNS,
-        MAC_REDO, MAC_SAVE, MAC_SELALL, MAC_FIND, KC_TRNS, KC_TRNS,
-        MAC_CLOSE, MAC_NEWTAB, MAC_NEWWIN, MAC_REL, KC_TRNS, KC_TRNS,
-        MAC_TABS, MAC_WIN, MAC_TABSFT, MAC_TASKMG, MAC_TASKMG2, TO(0))
+        MAC_SELALL, MAC_CPY,  MAC_CUT,    MAC_PST,    KC_TRNS,    KC_TRNS,
+        MAC_FIND,   MAC_REDO, MAC_UNDO,   MAC_SAVE,   KC_TRNS,    KC_TRNS,
+        MAC_NEWWIN, MAC_WIN,  MAC_CLOSE,  MAC_REL,    KC_TRNS,    KC_TRNS,
+        MAC_NEWTAB, MAC_TABS, MAC_PRVTAB, MAC_SECURE, MAC_TASKMG, TO(0))
 };
 
 /* -------------------------------------------------------------------------
@@ -195,6 +200,9 @@ static void set_last_key_display(uint16_t keycode) {
     if (keycode >= SAFE_RANGE) {
         // For custom keycodes, display a special message
         switch (keycode) {
+            case MAC_SELALL:
+                sprintf(last_key_pressed, "Select All");
+                break;
             case MAC_CPY:
                 sprintf(last_key_pressed, "Copy");
                 break;
@@ -204,47 +212,44 @@ static void set_last_key_display(uint16_t keycode) {
             case MAC_PST:
                 sprintf(last_key_pressed, "Paste");
                 break;
-            case MAC_UNDO:
-                sprintf(last_key_pressed, "Undo");
+            case MAC_FIND:
+                sprintf(last_key_pressed, "Find");
                 break;
             case MAC_REDO:
                 sprintf(last_key_pressed, "Redo");
                 break;
+            case MAC_UNDO:
+                sprintf(last_key_pressed, "Undo");
+                break;
             case MAC_SAVE:
                 sprintf(last_key_pressed, "Save");
-                break;
-            case MAC_SELALL:
-                sprintf(last_key_pressed, "Select All");
-                break;
-            case MAC_FIND:
-                sprintf(last_key_pressed, "Find");
-                break;
-            case MAC_CLOSE:
-                sprintf(last_key_pressed, "Close");
-                break;
-            case MAC_NEWTAB:
-                sprintf(last_key_pressed, "New Tab");
                 break;
             case MAC_NEWWIN:
                 sprintf(last_key_pressed, "New Window");
                 break;
+            case MAC_WIN:
+                sprintf(last_key_pressed, "Switch Win");
+                break;
+            case MAC_CLOSE:
+                sprintf(last_key_pressed, "Close");
+                break;
             case MAC_REL:
                 sprintf(last_key_pressed, "Reload");
                 break;
+            case MAC_NEWTAB:
+                sprintf(last_key_pressed, "New Tab");
+                break;
             case MAC_TABS:
-                sprintf(last_key_pressed, "Cycle Tabs");
+                sprintf(last_key_pressed, "Next Tab");
                 break;
-            case MAC_WIN:
-                sprintf(last_key_pressed, "Cycle Windows");
+            case MAC_PRVTAB:
+                sprintf(last_key_pressed, "Prev Tab");
                 break;
-            case MAC_TABSFT:
-                sprintf(last_key_pressed, "Tab Shift");
+            case MAC_SECURE:
+                sprintf(last_key_pressed, "Security");
                 break;
             case MAC_TASKMG:
-                sprintf(last_key_pressed, "Task Manager");
-                break;
-            case MAC_TASKMG2:
-                sprintf(last_key_pressed, "Task Manager");
+                sprintf(last_key_pressed, "Task Mgr");
                 break;
             default:
                 sprintf(last_key_pressed, "Macro");
@@ -263,6 +268,10 @@ static void set_last_key_display(uint16_t keycode) {
 // keycode isn't a macro, so the caller can fall back to normal handling.
 static bool send_macro_action(uint16_t keycode) {
     switch (keycode) {
+        // Row 1 - clipboard
+        case MAC_SELALL:
+            tap_code16(LCTL(KC_A));
+            return true;
         case MAC_CPY:
             tap_code16(LCTL(KC_C));
             return true;
@@ -272,46 +281,46 @@ static bool send_macro_action(uint16_t keycode) {
         case MAC_PST:
             tap_code16(LCTL(KC_V));
             return true;
-        case MAC_UNDO:
-            tap_code16(LCTL(KC_Z));
+        // Row 2 - editing
+        case MAC_FIND:
+            tap_code16(LCTL(KC_F));
             return true;
         case MAC_REDO:
             tap_code16(LCTL(KC_Y));
             return true;
+        case MAC_UNDO:
+            tap_code16(LCTL(KC_Z));
+            return true;
         case MAC_SAVE:
             tap_code16(LCTL(KC_S));
             return true;
-        case MAC_SELALL:
-            tap_code16(LCTL(KC_A));
-            return true;
-        case MAC_FIND:
-            tap_code16(LCTL(KC_F));
-            return true;
-        case MAC_CLOSE:
-            tap_code16(LCTL(KC_W));
-            return true;
-        case MAC_NEWTAB:
-            tap_code16(LCTL(KC_T));
-            return true;
+        // Row 3 - windows
         case MAC_NEWWIN:
             tap_code16(LCTL(KC_N));
-            return true;
-        case MAC_REL:
-            tap_code16(LCTL(KC_R));
-            return true;
-        case MAC_TABS:
-            tap_code16(LCTL(KC_TAB));
             return true;
         case MAC_WIN:
             tap_code16(LALT(KC_TAB));
             return true;
-        case MAC_TABSFT:
-            tap_code16(LSFT(KC_TAB));
+        case MAC_CLOSE:
+            tap_code16(LCTL(KC_W));
             return true;
-        case MAC_TASKMG:
+        case MAC_REL:
+            tap_code16(LCTL(KC_R));
+            return true;
+        // Row 4 - tabs and system
+        case MAC_NEWTAB:
+            tap_code16(LCTL(KC_T));
+            return true;
+        case MAC_TABS:
+            tap_code16(LCTL(KC_TAB));
+            return true;
+        case MAC_PRVTAB:
+            tap_code16(LCTL(LSFT(KC_TAB)));
+            return true;
+        case MAC_SECURE:
             tap_code16(LCTL(LALT(KC_DEL)));
             return true;
-        case MAC_TASKMG2:
+        case MAC_TASKMG:
             tap_code16(LCTL(LSFT(KC_ESC)));
             return true;
     }

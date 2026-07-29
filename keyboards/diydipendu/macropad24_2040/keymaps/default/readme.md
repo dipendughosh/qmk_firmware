@@ -14,7 +14,7 @@ keymap.
 | 0 | `_FUNCTION`         | F1-F12, Ins/Del, Home/End, PgUp/PgDn, arrows      |
 | 1 | `_SPECIAL_FUNCTION` | F13-F24                                           |
 | 2 | `_NUMPAD`           | Numpad digits and operators                       |
-| 3 | `_MACROS`           | Copy/cut/paste, undo/redo, tab and window control |
+| 3 | `_MACROS`           | Clipboard, editing, window and tab shortcuts      |
 
 The bottom-right key steps through the layers with `TG(1)` -> `TG(2)` ->
 `TG(3)`, then `TO(0)` to return to the base layer.
