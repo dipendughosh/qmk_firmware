@@ -78,6 +78,18 @@ The shortcut each one sends:
 Switch user, Sign out, Task Manager). The key beside it skips that menu and
 goes straight to Task Manager.
 
+### Remembering the layer
+
+The active layer survives an unplug: on connect the board returns to whichever
+layer it was on. The soft reset still drops back to layer 0, and that is
+remembered too.
+
+The RP2040 has no real EEPROM, so QMK emulates it in flash. To avoid a flash
+write on every layer key press -- including each intermediate step while
+cycling -- the save is deferred until the layer has been left alone for
+`LAYER_SAVE_DELAY_MS` (3s), and is skipped if the value has not changed. Switch
+layers and unplug within that window and the change will not have been stored.
+
 ### Cycling layers
 
 The bottom-right key advances one layer per press and wraps back to the base

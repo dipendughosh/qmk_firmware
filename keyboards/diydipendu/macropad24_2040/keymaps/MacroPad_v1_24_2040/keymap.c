@@ -156,6 +156,35 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 // How long "Screen Off"/"Screen On" stays up before the toggle takes effect.
 #define SCREEN_MSG_MS 500
 
+/* --- Idle layout grid -----------------------------------------------------
+ * When idle the display shows the layer's whole layout as a 6x4 grid, one cell
+ * per key. 128px / 6 columns / 6px font leaves room for exactly 3 characters
+ * per key, so the legends are abbreviated -- see key_abbrev().
+ *
+ * A layer change shows the layer name large for a moment first, then the grid
+ * takes over.
+ */
+#define LAYER_NAME_MS 1000
+
+// Width of one grid cell. Six of these span 126 of the 128 available pixels.
+#define GRID_CELL_W 21
+#define GRID_ROWS 4
+#define GRID_COLS 6
+
+/* --- Layer persistence ----------------------------------------------------
+ * The active layer is remembered across unplugs. The RP2040 has no real
+ * EEPROM, so QMK emulates it in flash -- writing on every layer change would
+ * mean a flash write per keypress, including each step while cycling through
+ * layers. Instead the save waits until the layer has been left alone for
+ * LAYER_SAVE_DELAY_MS, and is skipped entirely if the value is unchanged.
+ */
+#define LAYER_SAVE_DELAY_MS 3000
+
+// Tag stored alongside the layer so untouched/erased EEPROM isn't mistaken for
+// a saved value.
+#define LAYER_SAVE_MAGIC 0x4C590000u
+#define LAYER_SAVE_MASK 0xFFFF0000u
+
 /* --- Idle screensaver -----------------------------------------------------
  * The driver's own blanking is off (OLED_TIMEOUT 0 in config.h). Instead, after
  * SCREENSAVER_START_MS of no key activity the Matrix rain plays for one more
@@ -230,6 +259,14 @@ static char last_key_code[8]     = "";
 
 // When the last key event happened, which drives the screensaver and sleep.
 static uint32_t last_activity_timer = 0;
+
+// When the active layer last changed, so the layer name can be shown large for
+// LAYER_NAME_MS before the layout grid replaces it.
+static uint32_t layer_change_timer = 0;
+
+// A layer change is waiting to be written to EEPROM once it has settled.
+static bool     layer_save_pending = false;
+static uint32_t layer_save_timer   = 0;
 
 /* -------------------------------------------------------------------------
  * 5. Key handling
@@ -372,6 +409,18 @@ static bool send_macro_action(uint16_t keycode) {
  * 6. QMK callbacks
  * ---------------------------------------------------------------------- */
 
+// The layer saved in EEPROM, or 0 if nothing valid is stored there.
+static uint8_t load_saved_layer(void) {
+    uint32_t raw = eeconfig_read_user();
+    if ((raw & LAYER_SAVE_MASK) != LAYER_SAVE_MAGIC) {
+        return 0;
+    }
+    uint8_t layer = (uint8_t)(raw & 0xFF);
+    // Guard against a stored layer that no longer exists, e.g. after the
+    // keymap is rebuilt with fewer layers.
+    return (layer <= _MACROS) ? layer : 0;
+}
+
 void keyboard_post_init_user(void) {
     // Raw matrix-scan printing over `qmk console`, so ghosting/wiring issues
     // can be diagnosed without a multimeter.
@@ -381,6 +430,18 @@ void keyboard_post_init_user(void) {
     rgblight_enable_noeeprom();
     rgblight_mode_noeeprom(RGBLIGHT_MODE_STATIC_LIGHT);
     rgblight_sethsv_noeeprom(0, 255, 255);
+
+    // Come back on whichever layer was in use when the board was unplugged.
+    layer_move(load_saved_layer());
+}
+
+// Restart the "show the layer name large" window whenever the layer changes,
+// and queue the new layer to be persisted once it settles.
+layer_state_t layer_state_set_user(layer_state_t state) {
+    layer_change_timer = timer_read32();
+    layer_save_pending = true;
+    layer_save_timer   = timer_read32();
+    return state;
 }
 
 // Steps the onboard RGB LED, and drives both long-press actions.
@@ -419,6 +480,17 @@ void housekeeping_task_user(void) {
             oled_message      = MSG_SCREEN_ON;
         }
         oled_message_timer = timer_read32();
+    }
+
+    // Persist the layer once it has been left alone, and only if it actually
+    // differs from what is already stored -- flash writes are not free.
+    if (layer_save_pending && timer_elapsed32(layer_save_timer) >= LAYER_SAVE_DELAY_MS) {
+        layer_save_pending = false;
+
+        uint8_t current = get_highest_layer(layer_state);
+        if (current != load_saved_layer()) {
+            eeconfig_update_user(LAYER_SAVE_MAGIC | current);
+        }
     }
 
     // Apply whatever the expiring message was announcing.
@@ -676,39 +748,176 @@ static void render_message(void) {
     oled_write_string_scaled_centered(text, y0, scale);
 }
 
-// The idle screen: current layer name, large and centered at the top.
-static void render_main_info(void) {
-    // Only clear when the layer actually changes. OLED_UPDATE_PROCESS_LIMIT
-    // defaults to 1 block per frame, so clearing every frame (marking the
-    // whole buffer dirty each time) starves the flush and only the first
-    // block ever reaches the screen.
-    static int8_t last_rendered_layer = -1;
-    int8_t        current_layer       = get_highest_layer(layer_state);
-    if (current_layer != last_rendered_layer) {
-        last_rendered_layer = current_layer;
-        oled_clear();
+/* --- Layout grid -----------------------------------------------------------
+ * The grid reads the keymap at runtime rather than keeping its own copy of the
+ * layout, so rearranging a layer needs no changes here.
+ */
+
+// Arrow glyphs live in the font's control-code range (see lib/glcdfont.c).
+#define GLYPH_UP "\x18"
+#define GLYPH_DOWN "\x19"
+#define GLYPH_RIGHT "\x1A"
+#define GLYPH_LEFT "\x1B"
+
+// At most three characters per key. Necessarily terse on the macro layer; the
+// printed reference card in the keyboard folder carries the full names.
+static const char *key_abbrev(uint16_t kc) {
+    switch (kc) {
+        case KC_F1 ... KC_F12: {
+            static char buf[4];
+            snprintf(buf, sizeof(buf), "F%u", (unsigned)(kc - KC_F1 + 1));
+            return buf;
+        }
+        case KC_F13 ... KC_F24: {
+            static char buf[4];
+            snprintf(buf, sizeof(buf), "F%u", (unsigned)(kc - KC_F13 + 13));
+            return buf;
+        }
+        // Note the range order: the keypad digits run KC_P1..KC_P9 and then
+        // KC_P0, so KC_P0 is the *end* of the range, not the start.
+        case KC_P1 ... KC_P0: {
+            if (!host_keyboard_led_state().num_lock) {
+                // With Num Lock off the keypad sends its navigation functions
+                // instead of digits. Keypad 5 does nothing, hence the blank.
+                static const char *const nav[] = {"End", GLYPH_DOWN, "PgD",   GLYPH_LEFT, "",
+                                                  GLYPH_RIGHT, "Hom", GLYPH_UP, "PgU", "Ins"};
+                return nav[kc - KC_P1];
+            }
+            static char buf[2];
+            buf[0] = (char)('0' + ((kc - KC_P1 + 1) % 10));
+            buf[1] = '\0';
+            return buf;
+        }
+
+        case KC_INS:  return "Ins";
+        case KC_DEL:  return "Del";
+        case KC_HOME: return "Hom";
+        case KC_END:  return "End";
+        case KC_PGUP: return "PgU";
+        case KC_PGDN: return "PgD";
+        case KC_ESC:  return "Esc";
+        case KC_UP:   return GLYPH_UP;
+        case KC_DOWN: return GLYPH_DOWN;
+        case KC_RGHT: return GLYPH_RIGHT;
+        case KC_LEFT: return GLYPH_LEFT;
+
+        case KC_PPLS: return "+";
+        case KC_PMNS: return "-";
+        case KC_PAST: return "*";
+        case KC_PSLS: return "/";
+        case KC_PDOT: return host_keyboard_led_state().num_lock ? "." : "Del";
+        case KC_NUM:  return "NUM";
+
+        case MAC_SELALL: return "SEL";
+        case MAC_CPY:    return "CPY";
+        case MAC_CUT:    return "CUT";
+        case MAC_PST:    return "PST";
+        case MAC_FIND:   return "FND";
+        case MAC_REDO:   return "RDO";
+        case MAC_UNDO:   return "UND";
+        case MAC_SAVE:   return "SAV";
+        case MAC_NEWWIN: return "NWN";
+        case MAC_WIN:    return "SWN";
+        case MAC_CLOSE:  return "CLS";
+        case MAC_REL:    return "RLD";
+        case MAC_NEWTAB: return "NTB";
+        case MAC_TABS:   return "NXT";
+        case MAC_PRVTAB: return "PRV";
+        case MAC_SECURE: return "SEC";
+        case MAC_TASKMG: return "TSK";
     }
 
-    const char *layer_name;
-    switch (current_layer) {
+    // The layer-step key: TG() on layers 0-2, TO() on layer 3.
+    if (IS_QK_TO(kc) || IS_QK_TOGGLE_LAYER(kc)) {
+        return "Lyr";
+    }
+    return "";
+}
+
+// The keycode a position resolves to on `layer`, following transparency down.
+static uint16_t resolved_keycode(uint8_t layer, uint8_t row, uint8_t col) {
+    keypos_t pos = {.row = row, .col = col};
+    for (int8_t l = (int8_t)layer; l >= 0; l--) {
+        uint16_t kc = keymap_key_to_keycode((uint8_t)l, pos);
+        if (kc != KC_TRNS) {
+            return kc;
+        }
+    }
+    return KC_NO;
+}
+
+// Draws the whole layer as a 6x4 grid, one cell per physical key.
+static void render_layout_grid(uint8_t layer) {
+    // 4 rows of 8px with 8px between them = 56px, centred in 64px.
+    const uint8_t row_pitch = OLED_FONT_HEIGHT * 2;
+    const uint8_t top       = (OLED_DISPLAY_HEIGHT - (GRID_ROWS * row_pitch - OLED_FONT_HEIGHT)) / 2;
+
+    for (uint8_t r = 0; r < GRID_ROWS; r++) {
+        for (uint8_t c = 0; c < GRID_COLS; c++) {
+            const char *txt = key_abbrev(resolved_keycode(layer, r, c));
+            uint8_t     len = strlen(txt);
+            if (len == 0) {
+                continue;
+            }
+
+            // Centre the legend inside its cell.
+            uint8_t cell_x = c * GRID_CELL_W;
+            uint8_t x      = cell_x + (GRID_CELL_W - len * OLED_FONT_WIDTH) / 2;
+
+            oled_write_string_scaled_at(txt, x, top + r * row_pitch, 1);
+        }
+    }
+}
+
+static const char *layer_name(uint8_t layer) {
+    switch (layer) {
         case _FUNCTION:
-            layer_name = "FUNCTION";
-            break;
+            return "FUNCTION";
         case _SPECIAL_FUNCTION:
-            layer_name = "SPECIAL";
-            break;
+            return "SPECIAL";
         case _NUMPAD:
-            layer_name = "NUMPAD";
-            break;
+            return "NUMPAD";
         case _MACROS:
-            layer_name = "MACROS";
-            break;
-        default:
-            layer_name = "UNDEFINED";
-            break;
+            return "MACROS";
     }
+    return "UNDEFINED";
+}
 
-    oled_write_string_scaled_centered(layer_name, 0, 2);
+// The idle screen. For LAYER_NAME_MS after a layer change it shows the layer
+// name large and centred; after that it switches to the layout grid.
+//
+// `force` must be set when arriving from a different screen, because the
+// content-change check below would otherwise skip the draw and leave the
+// screen blank after oled_task_user() cleared it.
+static void render_main_info(bool force) {
+    uint8_t current_layer = get_highest_layer(layer_state);
+    bool    naming        = timer_elapsed32(layer_change_timer) < LAYER_NAME_MS;
+    // The numpad legends depend on Num Lock, which the host can change without
+    // any key on this board being pressed, so it has to be watched here.
+    bool num_lock = host_keyboard_led_state().num_lock;
+
+    // Redraw only when the content actually changes. Two reasons: clearing
+    // every frame would starve the flush (OLED_UPDATE_PROCESS_LIMIT is 1 block
+    // per frame), and redrawing the 24-cell grid every scan would burn a lot of
+    // cycles for an identical result.
+    static int8_t last_layer    = -1;
+    static int8_t last_naming   = -1;
+    static int8_t last_num_lock = -1;
+    if (!force && current_layer == last_layer && (int8_t)naming == last_naming && (int8_t)num_lock == last_num_lock) {
+        return;
+    }
+    last_layer    = current_layer;
+    last_naming   = naming;
+    last_num_lock = num_lock;
+
+    oled_clear();
+
+    if (naming) {
+        uint8_t y = (OLED_DISPLAY_HEIGHT - OLED_FONT_HEIGHT * 2) / 2;
+        oled_write_string_scaled_centered(layer_name(current_layer), y, 2);
+    } else {
+        render_layout_grid(current_layer);
+    }
 
     // Display WPM to enable uncomment he below code and in rules.mk
     // oled_set_cursor(0, 2);
@@ -915,12 +1124,21 @@ bool oled_task_user(void) {
         }
         render_matrix_rain();
     } else if (keys_held == 0) {
-        // Nothing held: show the layer name
-        if (last_screen != OLED_SCREEN_LAYER) {
+        // Nothing held: show the layer name, then its layout grid
+        bool entering = (last_screen != OLED_SCREEN_LAYER);
+        if (entering) {
+            if (last_screen == OLED_SCREEN_SPLASH) {
+                // The boot sequence outlasts the naming window that started at
+                // power-on, so restart it here and let the layer name have its
+                // moment before the grid appears. Deliberately not done when
+                // arriving from the key screen, or the name would flash on
+                // every key release.
+                layer_change_timer = timer_read32();
+            }
             last_screen = OLED_SCREEN_LAYER;
             oled_clear();
         }
-        render_main_info();
+        render_main_info(entering);
     } else {
         // A key is down: show it for as long as it's held
         if (last_screen != OLED_SCREEN_KEY) {
