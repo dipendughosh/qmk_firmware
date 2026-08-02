@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<title>MacroPad24 &mdash; two-line keycap reference</title>
+<style>
+  :root { --cell: 30mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DejaVu Sans", Verdana, Geneva, sans-serif; color: #000; background: #fff; padding: 8mm; }
+  h1 { font-size: 12pt; margin: 0 0 1.5mm; }
+  .note { font-size: 7.5pt; color: #333; margin: 0 0 5mm; max-width: 178mm; line-height: 1.45; }
+  .grid { display: grid; grid-template-columns: repeat(6, var(--cell)); grid-auto-rows: var(--cell); }
+  .key {
+    border: 0.3mm solid #000; border-radius: 1.4mm;
+    margin: -0.15mm 0 0 -0.15mm;
+    padding: 1.5mm 1mm; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .line { display: flex; align-items: center; justify-content: center; font-size: 8pt; line-height: 1.15; }
+  .solo { font-size: 8.5pt; font-weight: 600; }
+  .e    { padding: 0 1.3mm; }
+  .e + .e { border-left: 0.2mm solid #bbb; }
+  .rule { width: 80%; border-top: 0.2mm solid #bbb; margin: 1.6mm 0; }
+  .hold { position: absolute; top: 0.5mm; right: 1mm; font-size: 5pt; }
+  .legend { font-size: 7.5pt; margin-top: 5mm; line-height: 1.6; }
+  @media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    body { padding: 0; }
+    .screen-only { display: none; }
+  }
+</style>
+
+<h1>MacroPad24 &mdash; keycap reference</h1>
+
+<p class="note screen-only">
+  One square per key, split by a horizontal line. <b>Above:</b> Function | Special
+  Function. <b>Below:</b> Numpad | Macros. Keys that do the same thing on every layer
+  carry a single legend. Cells are 30&nbsp;mm so this sheet is not at keycap pitch
+  &mdash; see <a href="keycap-reference.html">keycap-reference.html</a> for a 1:1 grid
+  that overlays the pad.
+</p>
+
+<div class="grid"><div class="key"><div class="line"><span class="e">F1</span><span class="e">F13</span></div><div class="rule"></div><div class="line"><span class="e">1</span><span class="e">Select All</span></div></div><div class="key"><div class="line"><span class="e">F2</span><span class="e">F14</span></div><div class="rule"></div><div class="line"><span class="e">2</span><span class="e">Copy</span></div></div><div class="key"><div class="line"><span class="e">F3</span><span class="e">F15</span></div><div class="rule"></div><div class="line"><span class="e">3</span><span class="e">Cut</span></div></div><div class="key"><div class="line"><span class="e">F4</span><span class="e">F16</span></div><div class="rule"></div><div class="line"><span class="e">+</span><span class="e">Paste</span></div></div><div class="key"><div class="solo"><span class="e">Insert</span></div></div><div class="key"><div class="solo"><span class="e">Delete</span></div></div><div class="key"><div class="line"><span class="e">F5</span><span class="e">F17</span></div><div class="rule"></div><div class="line"><span class="e">4</span><span class="e">Find</span></div></div><div class="key"><div class="line"><span class="e">F6</span><span class="e">F18</span></div><div class="rule"></div><div class="line"><span class="e">5</span><span class="e">Redo</span></div></div><div class="key"><div class="line"><span class="e">F7</span><span class="e">F19</span></div><div class="rule"></div><div class="line"><span class="e">6</span><span class="e">Undo</span></div></div><div class="key"><div class="line"><span class="e">F8</span><span class="e">F20</span></div><div class="rule"></div><div class="line"><span class="e">&#8722;</span><span class="e">Save</span></div></div><div class="key"><div class="solo"><span class="e">Home</span></div></div><div class="key"><div class="solo"><span class="e">End</span></div></div><div class="key"><div class="line"><span class="e">F9</span><span class="e">F21</span></div><div class="rule"></div><div class="line"><span class="e">7</span><span class="e">New Window</span></div></div><div class="key"><div class="line"><span class="e">F10</span><span class="e">F22</span></div><div class="rule"></div><div class="line"><span class="e">8</span><span class="e">Switch Win</span></div></div><div class="key"><div class="line"><span class="e">F11</span><span class="e">F23</span></div><div class="rule"></div><div class="line"><span class="e">9</span><span class="e">Close Win</span></div></div><div class="key"><div class="line"><span class="e">F12</span><span class="e">F24</span></div><div class="rule"></div><div class="line"><span class="e">&times;</span><span class="e">Reload</span></div></div><div class="key"><div class="solo"><span class="e">Page Up</span></div></div><div class="key"><div class="solo"><span class="e">Page Dn</span></div></div><div class="key"><div class="line"><span class="e">&#8592;</span></div><div class="rule"></div><div class="line"><span class="e">0</span><span class="e">New Tab</span></div></div><div class="key"><div class="line"><span class="e">&#8594;</span></div><div class="rule"></div><div class="line"><span class="e">.</span><span class="e">Next Tab</span></div></div><div class="key"><div class="line"><span class="e">&#8593;</span></div><div class="rule"></div><div class="line"><span class="e">/</span><span class="e">Prev Tab</span></div></div><div class="key"><div class="line"><span class="e">&#8595;</span></div><div class="rule"></div><div class="line"><span class="e">Num Lk</span><span class="e">Security</span></div></div><div class="key"><span class="hold">&#9679;</span><div class="line"><span class="e">Esc</span></div><div class="rule"></div><div class="line"><span class="e">Task Mgr</span></div></div><div class="key"><span class="hold">&#9679;</span><div class="solo">Layer</div></div></div>
+
+<p class="legend">
+  <b>Above the line</b> &mdash; layer 0 (Function) | layer 1 (Special Function).<br>
+  <b>Below the line</b> &mdash; layer 2 (Numpad) | layer 3 (Macros).<br>
+  <b>&#9679;</b> &mdash; long-press action. Bottom-right: hold 1.5&nbsp;s for a soft reset.
+  The key to its left: hold 1.5&nbsp;s to turn the screen off or on.<br>
+  <b>Layer</b> &mdash; steps through the layers: 0 &rarr; 1 &rarr; 2 &rarr; 3 &rarr; 0.
+</p>
+</html>

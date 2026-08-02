@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<title>MacroPad24 keycap reference</title>
+<style>
+  :root { --pitch: 19.05mm; --cap: 17.6mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DejaVu Sans", Verdana, Geneva, sans-serif; color: #000; background: #fff; padding: 8mm; }
+  h1 { font-size: 12pt; margin: 0 0 1.5mm; }
+  .note { font-size: 7.5pt; color: #333; margin: 0 0 5mm; max-width: 175mm; line-height: 1.45; }
+  .sheet { display: flex; flex-wrap: wrap; gap: 7mm 9mm; }
+  .layer { break-inside: avoid; page-break-inside: avoid; }
+  h2 { font-size: 8.5pt; margin: 0 0 1.5mm; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(6, var(--pitch)); grid-auto-rows: var(--pitch); }
+  .key {
+    width: var(--cap); height: var(--cap);
+    margin: calc((var(--pitch) - var(--cap)) / 2);
+    border: 0.3mm solid #000; border-radius: 1.4mm;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; overflow: hidden; position: relative; padding: 0.6mm;
+  }
+  .lbl { font-size: 6.5pt; line-height: 1.06; }
+  .sub { font-size: 4.7pt; color: #555; margin-top: 0.5mm; line-height: 1; }
+  .inherited { border-style: dashed; }
+  .inherited .lbl { font-style: italic; color: #666; }
+  .hold { position: absolute; top: 0.2mm; right: 0.7mm; font-size: 4.5pt; }
+  .legend { font-size: 7.5pt; margin-top: 5mm; line-height: 1.6; }
+  @media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    body { padding: 0; }
+    .screen-only { display: none; }
+  }
+</style>
+
+<h1>MacroPad24 &mdash; keycap reference</h1>
+
+<p class="note screen-only">
+  Print at <b>100% scale</b> with &ldquo;fit to page&rdquo; / scaling switched <b>off</b>.
+  Each square is one 1u DSA cap on 19.05&nbsp;mm pitch, so a correctly printed grid
+  lays over the pad exactly &mdash; check by measuring one row: six keys should span 114&nbsp;mm.
+</p>
+
+<div class="sheet">
+<section class="layer"><h2>Layer 0 &mdash; Function</h2><div class="grid"><div class="key"><span class="lbl">F1</span></div><div class="key"><span class="lbl">F2</span></div><div class="key"><span class="lbl">F3</span></div><div class="key"><span class="lbl">F4</span></div><div class="key"><span class="lbl">Insert</span></div><div class="key"><span class="lbl">Delete</span></div><div class="key"><span class="lbl">F5</span></div><div class="key"><span class="lbl">F6</span></div><div class="key"><span class="lbl">F7</span></div><div class="key"><span class="lbl">F8</span></div><div class="key"><span class="lbl">Home</span></div><div class="key"><span class="lbl">End</span></div><div class="key"><span class="lbl">F9</span></div><div class="key"><span class="lbl">F10</span></div><div class="key"><span class="lbl">F11</span></div><div class="key"><span class="lbl">F12</span></div><div class="key"><span class="lbl">Page Up</span></div><div class="key"><span class="lbl">Page Dn</span></div><div class="key"><span class="lbl">&#8592;</span></div><div class="key"><span class="lbl">&#8594;</span></div><div class="key"><span class="lbl">&#8593;</span></div><div class="key"><span class="lbl">&#8595;</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Esc</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Layer&nbsp;1</span><span class="sub">toggle</span></div></div></section>
+<section class="layer"><h2>Layer 1 &mdash; Special Function</h2><div class="grid"><div class="key"><span class="lbl">F13</span></div><div class="key"><span class="lbl">F14</span></div><div class="key"><span class="lbl">F15</span></div><div class="key"><span class="lbl">F16</span></div><div class="key inherited"><span class="lbl">Insert</span></div><div class="key inherited"><span class="lbl">Delete</span></div><div class="key"><span class="lbl">F17</span></div><div class="key"><span class="lbl">F18</span></div><div class="key"><span class="lbl">F19</span></div><div class="key"><span class="lbl">F20</span></div><div class="key inherited"><span class="lbl">Home</span></div><div class="key inherited"><span class="lbl">End</span></div><div class="key"><span class="lbl">F21</span></div><div class="key"><span class="lbl">F22</span></div><div class="key"><span class="lbl">F23</span></div><div class="key"><span class="lbl">F24</span></div><div class="key inherited"><span class="lbl">Page Up</span></div><div class="key inherited"><span class="lbl">Page Dn</span></div><div class="key inherited"><span class="lbl">&#8592;</span></div><div class="key inherited"><span class="lbl">&#8594;</span></div><div class="key inherited"><span class="lbl">&#8593;</span></div><div class="key inherited"><span class="lbl">&#8595;</span></div><div class="key inherited"><span class="hold">&#9679;</span><span class="lbl">Esc</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Layer&nbsp;2</span><span class="sub">toggle</span></div></div></section>
+<section class="layer"><h2>Layer 2 &mdash; Numpad</h2><div class="grid"><div class="key"><span class="lbl">1</span></div><div class="key"><span class="lbl">2</span></div><div class="key"><span class="lbl">3</span></div><div class="key"><span class="lbl">+</span></div><div class="key inherited"><span class="lbl">Insert</span></div><div class="key inherited"><span class="lbl">Delete</span></div><div class="key"><span class="lbl">4</span></div><div class="key"><span class="lbl">5</span></div><div class="key"><span class="lbl">6</span></div><div class="key"><span class="lbl">&#8722;</span></div><div class="key inherited"><span class="lbl">Home</span></div><div class="key inherited"><span class="lbl">End</span></div><div class="key"><span class="lbl">7</span></div><div class="key"><span class="lbl">8</span></div><div class="key"><span class="lbl">9</span></div><div class="key"><span class="lbl">&times;</span></div><div class="key inherited"><span class="lbl">Page Up</span></div><div class="key inherited"><span class="lbl">Page Dn</span></div><div class="key"><span class="lbl">0</span></div><div class="key"><span class="lbl">.</span></div><div class="key"><span class="lbl">/</span></div><div class="key"><span class="lbl">Num Lk</span></div><div class="key inherited"><span class="hold">&#9679;</span><span class="lbl">Esc</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Layer&nbsp;3</span><span class="sub">toggle</span></div></div></section>
+<section class="layer"><h2>Layer 3 &mdash; Macros</h2><div class="grid"><div class="key"><span class="lbl">Select All</span><span class="sub">Ctrl+A</span></div><div class="key"><span class="lbl">Copy</span><span class="sub">Ctrl+C</span></div><div class="key"><span class="lbl">Cut</span><span class="sub">Ctrl+X</span></div><div class="key"><span class="lbl">Paste</span><span class="sub">Ctrl+V</span></div><div class="key inherited"><span class="lbl">Insert</span></div><div class="key inherited"><span class="lbl">Delete</span></div><div class="key"><span class="lbl">Find</span><span class="sub">Ctrl+F</span></div><div class="key"><span class="lbl">Redo</span><span class="sub">Ctrl+Y</span></div><div class="key"><span class="lbl">Undo</span><span class="sub">Ctrl+Z</span></div><div class="key"><span class="lbl">Save</span><span class="sub">Ctrl+S</span></div><div class="key inherited"><span class="lbl">Home</span></div><div class="key inherited"><span class="lbl">End</span></div><div class="key"><span class="lbl">New Window</span><span class="sub">Ctrl+N</span></div><div class="key"><span class="lbl">Switch Win</span><span class="sub">Alt+TAB</span></div><div class="key"><span class="lbl">Close Win</span><span class="sub">Ctrl+W</span></div><div class="key"><span class="lbl">Reload</span><span class="sub">Ctrl+R</span></div><div class="key inherited"><span class="lbl">Page Up</span></div><div class="key inherited"><span class="lbl">Page Dn</span></div><div class="key"><span class="lbl">New Tab</span><span class="sub">Ctrl+T</span></div><div class="key"><span class="lbl">Next Tab</span><span class="sub">Ctrl+TAB</span></div><div class="key"><span class="lbl">Prev Tab</span><span class="sub">Ctrl+Shift+TAB</span></div><div class="key"><span class="lbl">Security</span><span class="sub">Ctrl+Alt+DEL</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Task Mgr</span><span class="sub">Ctrl+Shift+ESC</span></div><div class="key"><span class="hold">&#9679;</span><span class="lbl">Layer&nbsp;0</span><span class="sub">go to</span></div></div></section>
+</div>
+
+<p class="legend">
+  <b>Dashed, italic</b> &mdash; inherited from layer 0, so these keys do the same thing on every layer.<br>
+  <b>&#9679;</b> &mdash; has a long-press action. Bottom-right: hold 1.5&nbsp;s for a soft reset.
+  The key to its left: hold 1.5&nbsp;s to turn the screen off or on.<br>
+  <b>Layer N</b> &mdash; steps through the layers: 0 &rarr; 1 &rarr; 2 &rarr; 3 &rarr; 0.
+</p>
+</html>

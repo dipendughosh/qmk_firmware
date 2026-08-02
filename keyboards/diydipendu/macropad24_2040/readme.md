@@ -17,6 +17,21 @@ A 24-key (6x4) macropad with a 128x64 OLED and an RGB status LED.
 
 Diode direction is `COL2ROW`.
 
+## Keycap reference
+
+The caps are blank 1u DSA, so there are two printable cards to label them by.
+Both are generated from the keymap's own labels and shortcuts, so if you
+rearrange a layer they need regenerating to match.
+
+| Sheet | Layout | Scale |
+| ----- | ------ | ----- |
+| [keycap-reference.html](keycap-reference.html) | One grid per layer, four grids | **1:1** with the pad (19.05 mm pitch) |
+| [keycap-reference-layers.html](keycap-reference-layers.html) | One grid, all four layers stacked in each key | Enlarged (28 mm cells), not 1:1 |
+
+Print at **100% scale** with scaling/"fit to page" switched off. For the 1:1
+sheet you can check it came out right by measuring a row: six keys should span
+114 mm, and the printed grid should then sit exactly over the pad.
+
 ## Keymaps
 
 | Keymap                 | Description                                                          |

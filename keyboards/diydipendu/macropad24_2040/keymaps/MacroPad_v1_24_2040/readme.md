@@ -18,6 +18,10 @@ tables below are laid out the same way you see it.
 Entries in (brackets) are inherited from a lower layer, so they do the same
 thing on every layer.
 
+For blank keycaps there is a printable version of these tables at
+[keycap-reference.html](../../keycap-reference.html), laid out at actual key
+pitch so it can sit next to the pad.
+
 ### Layer 0 - Function
 
 | 1          | 2           | 3        | 4          | 5         | 6            |
